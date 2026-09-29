@@ -282,16 +282,14 @@ They are enforced by the build validator so they cannot regress.
 - Automatic triggers: **Shift is enabled** — hold it while standing still for 2s and the
   menu opens (moving restarts the timer). The spyglass trigger (`ENABLE_SPYGLASS_TRIGGER`)
   is off; `/cameramenu:open` replaces it.
-- **The script camera takes the player's rotation, not a look-at target.** It used to pass
-  `facingLocation: player.getHeadLocation()`, which aims the camera at the player on every
-  tick: the view stays locked to the player's own back, so turning the mouse does nothing you
-  can see, and when the camera sits close to the head that aim vector degenerates into
-  staring down at itself — first person, or a screen of grass. Passing
-  `rotation: player.getRotation()` is the documented form
-  (`camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`): the camera trails the player
-  and looks the same way it does, so the player stays in frame and looking around works.
-  (The Low Cinematic camera still aims at the player on purpose — it is a one-shot shot from
-  5 blocks away, where that is the intent and cannot collapse.)
+- **The script camera aims at the player** (`facingLocation: player.getHeadLocation()`);
+  `camTarget` is what decides the shoulder offset. The documented alternative,
+  `rotation: player.getRotation()`, was tried and rendered **no camera at all** in 26.50 — no
+  error, just sky — so it is not used. The price of aiming at the player is that the view is
+  an orbit around them: turning swings the world around you instead of looking freely, and
+  pitch does nothing. `/cameramenu:debug` re-tests `rotation` in game (step 2), so if a build ever
+  honours it the switch is one line. (The Low Cinematic camera aims at the player on
+  purpose too — it is a one-shot from 5 blocks away, where that is the intent.)
 - **The script camera is smoothed through `easeOptions`.** Re-positioning a camera every tick
   makes the picture step a whole tick of movement at a time, which reads as flicker (worst in
   the script path, and worse the faster you move). Passing

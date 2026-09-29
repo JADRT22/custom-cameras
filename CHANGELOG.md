@@ -6,6 +6,29 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `/cameramenu:debug` — a temporary command that reports what the script camera is doing and
+  changes the camera in three named steps. It exists because a camera that does nothing logs
+  nothing, so there is no other way to tell "worked", "did nothing" and "was refused" apart.
+  Remove it before a release.
+
+### Fixed
+
+- **The script camera's aim was investigated, and the look-at target stays.** Passing
+  `rotation: player.getRotation()` (the documented form,
+  `camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`) instead of `facingLocation` was
+  tried to unlock free look; in 26.50 it rendered no camera at all — no error, just sky — so
+  the aim stays on the player, which is the version that renders. The consequence is now
+  written down: the script camera is an **orbit** around the player, so turning swings the
+  world around you and pitch does nothing. `/cameramenu:debug` step 2 re-tests `rotation` in
+  game, so the switch is one line if a build ever honours it.
+- **`/cameramenu:mode script` did nothing at all in a fresh session.** With no camera picked
+  yet, `activeCam` was empty and the command only flipped the flag: it answered "script
+  mode" and left the camera where it was, which reads exactly like a camera stuck in first
+  person. It now clears the previous camera (a native preset camera can otherwise stay in
+  place) and reapplies the current or last-used one.
+
 ## [1.1.0] - 2026-09-29
 
 ### Added
@@ -18,9 +41,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `experimental_creator_cameras`, and enabling an experiment disables a world's achievements
   for good.
 - **In-game framing adjustments.** The camera menu gained an **Adjust camera (script)** entry
-  (`/cameramenu:tune` opens the same form): sliders for height, side, distance and smoothing,
-  saved per player and per world. Submitting switches the player to the script camera, because native
-  presets are files read at world load and cannot be changed at runtime.
+  (`/cameramenu:tune` opens the same board): one button per step for height, side, distance
+  and smoothing, saved per player and per world. Adjusting switches the player to the script
+  camera, because native presets are files read at world load and cannot be changed at
+  runtime.
 - **The script camera is a first-class path, not only an emergency fallback.** It can be
   picked by hand (`/cameramenu:mode script`), it is what the in-game sliders tune, and the
   choice is remembered per player/world — so a world without the experiment can run the
@@ -52,19 +76,6 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **The script camera aimed at the player, which locked the view to their back.** It passed
-  `facingLocation: player.getHeadLocation()`, so the camera always pointed at the player:
-  turning the mouse changed nothing visible (yaw only orbited the camera around the player,
-  pitch did nothing), and when the camera sat close to the head that aim vector degenerated
-  and it stared down at itself — a first-person view, or a screen full of grass. It now
-  passes the player's own rotation, the documented form
-  (`camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`): the camera trails the player
-  and looks the same way, so the player stays in frame and looking around works.
-- **`/cameramenu:mode script` did nothing at all in a fresh session.** With no camera picked
-  yet, `activeCam` was empty and the command only flipped the flag: it answered "script
-  mode" and left the camera where it was, which reads exactly like a camera stuck in first
-  person. It now clears the previous camera (a native preset camera can otherwise stay in
-  place) and reapplies the current or last-used one.
 - **Applying the pack could disable a world's achievements.** The manifest had no
   `metadata.product_type`, so the game treated it as a cheat world. That field is now present
   and enforced by the build.
@@ -82,13 +93,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The height range could bury the camera.** The floor was `-2` (a block below the player's
   feet); it is now `-1`, and everything is clamped on read as well as on write, so even a
   hand-edited value cannot put the camera under the ground.
-- **The in-game tuning form never opened.** It died with
-  `TypeError: Incorrect number of arguments to function. Expected 3-4, received 5`.
-  `@minecraft/server-ui` 2.x moved the slider step and starting value into an options object
-  (`slider(label, min, max, { valueStep, defaultValue })`); the code used the 1.x positional
-  shape. Sliders now go through a helper that retries the older shapes instead of taking the
-  whole form down, and the response is read by keeping only the numbers, so a label or divider
-  can never shift the values by one.
+- **The adjust form used the 1.x slider signature.** `@minecraft/server-ui` 2.x moved the
+  step and starting value into an options object
+  (`slider(label, min, max, { valueStep, defaultValue })`); the old positional shape threw
+  `Incorrect number of arguments to function. Expected 3-4, received 5` and took the whole
+  form down. Sliders were dropped altogether in favour of the button board described above.
 - **The script camera flickered.** It is re-positioned once per tick, so the picture stepped a
   whole tick of movement at a time. Calls now pass
   `easeOptions: { easeTime: 0.05, easeType: "linear" }`, which asks the client to interpolate

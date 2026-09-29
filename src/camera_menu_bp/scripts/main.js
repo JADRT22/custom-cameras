@@ -158,15 +158,13 @@ function writeTune(player, presetKey, values) {
 /**
  * Move the script camera.
  *
- * `rotation`, not `facingLocation`. This is the whole bug: aiming the camera AT the player
- * (`facingLocation: player.getHeadLocation()`) locks the view onto the player's own back, so
- * turning the mouse changes nothing you can see — yaw just orbits the camera around you and
- * pitch does not move the view at all. Worse, when the camera sits close to the head that
- * aim vector degenerates and the camera ends up staring down at itself: the view collapses
- * to first person, or to a screen full of grass. Passing the player's own rotation instead
- * is what the documented form does (`camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`):
- * the camera trails the player and looks the same way it does, so the player is in frame and
- * the mouse looks around again.
+ * `facingLocation` = the player's head. This IS the version that renders: aiming at the
+ * player puts them in frame, and the offset (camTarget) is what decides the shoulder
+ * framing. `rotation: player.getRotation()` looks like the tidier form and is documented
+ * (`camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`), but in 26.50 it produced a
+ * camera that never showed up — no error, no camera, just the sky — so it is not used here.
+ * `/cameramenu:debug` step 2 re-tests it in game; if that step ever starts rendering, this
+ * can be switched over and the "looking around is locked to the player" limitation goes away.
  *
  * `easeOptions` is what keeps it from flickering: a preset camera is only re-positioned once
  * per tick, so the client is asked to interpolate to each new target instead of hard-cutting
@@ -174,14 +172,13 @@ function writeTune(player, presetKey, values) {
  * session and every later call goes back to a plain hard cut — the camera keeps working, it
  * just flickers like it used to.
  */
-function setScriptCamera(player, location, easeTime) {
+function setScriptCamera(player, location, facingLocation, easeTime) {
   const camera = player.camera;
-  const rotation = player.getRotation();
   if (easeSupported && easeTime > 0) {
     try {
       camera.setCamera("minecraft:free", {
         location,
-        rotation,
+        facingLocation,
         easeOptions: { easeTime, easeType: "linear" },
       });
       return;
@@ -190,7 +187,7 @@ function setScriptCamera(player, location, easeTime) {
       console.warn(`[CameraMenu] camera ease unavailable, using hard cuts: ${e}`);
     }
   }
-  camera.setCamera("minecraft:free", { location, rotation });
+  camera.setCamera("minecraft:free", { location, facingLocation });
 }
 
 function setScriptMode(player, on) {
@@ -329,7 +326,7 @@ function applyFallback(player, preset) {
     const target = camTarget(player, off);
     const head = player.getHeadLocation();
     fallback.set(player.id, { preset, off, ease, cur: target, head });
-    setScriptCamera(player, target, ease);
+    setScriptCamera(player, target, head, ease);
   } catch (e) {
     console.warn(`[CameraMenu] fallback failed: ${e}`);
   }
@@ -368,7 +365,12 @@ system.runInterval(() => {
       c.x += (aim.x - c.x) * k;
       c.y += (aim.y - c.y) * k;
       c.z += (aim.z - c.z) * k;
-      setScriptCamera(player, { x: c.x, y: c.y, z: c.z }, state.ease);
+      setScriptCamera(
+        player,
+        { x: c.x, y: c.y, z: c.z },
+        { x: head.x, y: head.y, z: head.z },
+        state.ease
+      );
     } catch { /* player unloaded */ }
   }
 });
@@ -740,6 +742,69 @@ function cmdNext(origin) {
   };
 }
 
+// ==================== Debug (temporary) ====================
+//
+// The script camera produces no error in the content log whether it works, does nothing or
+// is refused, so the only way to tell the three apart is to ask the game for the numbers and
+// to change the camera in named steps while the player watches. Remove before a release.
+function cmdDebug(origin) {
+  const player = asPlayer(origin);
+  if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
+  system.run(() => {
+    const say = (m) => player.sendMessage(`§7[dbg] §f${m}`);
+    const f3 = (v) => `${v.x.toFixed(1)},${v.y.toFixed(1)},${v.z.toFixed(1)}`;
+
+    try {
+      say(`camera.isValid = ${player.camera.isValid}`);
+    } catch (e) {
+      say(`camera.isValid THREW: ${e}`);
+    }
+
+    const active = activeCam.get(player.id);
+    let off = [0.9, 2.5, 0.4];
+    if (active && TUNE_DEFAULTS[active.key]) {
+      const t = readTune(player, active.key);
+      if (t) off = [t.side, t.back, t.up];
+    }
+    const head = player.getHeadLocation();
+    const rot = player.getRotation();
+    const target = camTarget(player, off);
+
+    say(`dim=${player.dimension.id} loc=${f3(player.location)}`);
+    say(`preset=${active ? active.key : "(none)"} forceScript=${forceScript.has(player.id)} easeSupported=${easeSupported}`);
+    say(`head=${f3(head)} rot.x=${rot.x.toFixed(1)} rot.y=${rot.y.toFixed(1)}`);
+    say(`off=${JSON.stringify(off)} target=${f3(target)}`);
+
+    // Step 1: a plain vanilla preset. If the view does not even change here, the camera API
+    // itself is not doing anything in this world, and no amount of tweaking our own call will.
+    try {
+      player.camera.setCamera("minecraft:third_person");
+      say("passo 1: setCamera('minecraft:third_person') nao lancou — virou 3a pessoa?");
+    } catch (e) {
+      say(`passo 1 LANCOU: ${e}`);
+    }
+
+    system.runTimeout(() => {
+      try {
+        player.camera.setCamera("minecraft:free", { location: target, rotation: player.getRotation() });
+        say("passo 2: free + rotation nao lancou — a camera mudou?");
+      } catch (e) {
+        say(`passo 2 LANCOU: ${e}`);
+      }
+      system.runTimeout(() => {
+        try {
+          player.camera.setCamera("minecraft:free", { location: target, facingLocation: head });
+          say("passo 3: free + facingLocation nao lancou — a camera mudou?");
+        } catch (e) {
+          say(`passo 3 LANCOU: ${e}`);
+        }
+        say("fim. Me manda o texto do chat.");
+      }, 40);
+    }, 40);
+  });
+  return { status: CustomCommandStatus.Success };
+}
+
 system.beforeEvents.startup.subscribe((init) => {
   init.customCommandRegistry.registerEnum("cameramenu:preset", PRESETS.map((p) => p.key));
   init.customCommandRegistry.registerEnum("cameramenu:mode", ["native", "script"]);
@@ -804,5 +869,16 @@ system.beforeEvents.startup.subscribe((init) => {
       cheatsRequired: false,
     },
     cmdReset
+  );
+
+  // temporary, for pinning down why the script camera does nothing in some worlds
+  init.customCommandRegistry.registerCommand(
+    {
+      name: "cameramenu:debug",
+      description: "Report what the script camera is doing (temporary)",
+      permissionLevel: CommandPermissionLevel.Any,
+      cheatsRequired: false,
+    },
+    cmdDebug
   );
 });
