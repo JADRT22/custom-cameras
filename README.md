@@ -14,15 +14,15 @@ inside the game.
 
 ## Cameras
 
-| Preset | Description | Key |
+| Camera | What it is | `/cameramenu:set` |
 |---|---|---|
 | Default | Back to first person | `default` |
-| Left Shoulder | Orbit at the shoulder (`radius: 2.5`, `view_offset [-1.2, 0]`) | `left` |
-| Center Shoulder | Shoulder orbit, centered and closer | `center` |
-| Right Shoulder | Orbit at the shoulder, player pushed to the side | `right` |
-| Boom Shoulder | Variant built on `fixed_boom`: no orbit, fixed distance, no offset | `boom` |
-| Far | Distant third person (`radius: 7`) | `far` |
-| Low Cinematic | Low `minecraft:free` camera behind the player; resets itself | `low` |
+| Left Shoulder | Shoulder orbit, player pushed to the left (`view_offset [-1.2, 0]`, `radius 2.5`) | `left` |
+| Center Shoulder | Same distance as the other shoulders, but centered behind the player (no side offset) | `center` |
+| Right Shoulder | Shoulder orbit, player pushed to the right (`view_offset [1.2, 0]`) | `right` |
+| Boom Shoulder | Built on `fixed_boom`: no orbit, no side offset, fixed distance | `boom` |
+| Far | Distant third person (`radius 7`) | `far` |
+| Low Cinematic | Low `minecraft:free` camera behind the player; resets itself after 3s | `low` |
 
 ## Commands
 
@@ -328,8 +328,9 @@ that way — that is the one to build in if you want achievements.
 **`Failed to load camera presets` in the content log.** A preset violated the schema.
 Check the exact field name in the log; `starting_radius` is the usual suspect.
 
-**Nothing happens on a world.** The pack has to be enabled under Behavior Packs for that
-world, and the experiment has to be on.
+**Nothing happens on a world.** The pack has to be enabled under **Behavior Packs** for that
+world. The experiment is *not* required — if the camera works but feels choppier than the
+descriptions here, the add-on is on the script path, which is normal.
 
 Always read the **newest** `ContentLog*.txt` rather than screenshots — old sessions mix
 into screenshots and it is easy to chase an error that was already fixed. A session with
