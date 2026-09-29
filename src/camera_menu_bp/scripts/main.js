@@ -156,19 +156,32 @@ function writeTune(player, presetKey, values) {
 }
 
 /**
- * Move the script camera. `easeOptions` is what keeps it from flickering: a preset camera is
- * only re-positioned once per tick, so the client is asked to interpolate to each new target
- * instead of hard-cutting to it. If this build rejects the option (wrong name/shape), the
- * flag is cleared for the session and every later call goes back to a plain hard cut — the
- * camera keeps working, it just flickers like it used to.
+ * Move the script camera.
+ *
+ * `rotation`, not `facingLocation`. This is the whole bug: aiming the camera AT the player
+ * (`facingLocation: player.getHeadLocation()`) locks the view onto the player's own back, so
+ * turning the mouse changes nothing you can see — yaw just orbits the camera around you and
+ * pitch does not move the view at all. Worse, when the camera sits close to the head that
+ * aim vector degenerates and the camera ends up staring down at itself: the view collapses
+ * to first person, or to a screen full of grass. Passing the player's own rotation instead
+ * is what the documented form does (`camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`):
+ * the camera trails the player and looks the same way it does, so the player is in frame and
+ * the mouse looks around again.
+ *
+ * `easeOptions` is what keeps it from flickering: a preset camera is only re-positioned once
+ * per tick, so the client is asked to interpolate to each new target instead of hard-cutting
+ * to it. If this build rejects the option (wrong name/shape), the flag is cleared for the
+ * session and every later call goes back to a plain hard cut — the camera keeps working, it
+ * just flickers like it used to.
  */
-function setScriptCamera(player, location, facingLocation, easeTime) {
+function setScriptCamera(player, location, easeTime) {
   const camera = player.camera;
+  const rotation = player.getRotation();
   if (easeSupported && easeTime > 0) {
     try {
       camera.setCamera("minecraft:free", {
         location,
-        facingLocation,
+        rotation,
         easeOptions: { easeTime, easeType: "linear" },
       });
       return;
@@ -177,7 +190,7 @@ function setScriptCamera(player, location, facingLocation, easeTime) {
       console.warn(`[CameraMenu] camera ease unavailable, using hard cuts: ${e}`);
     }
   }
-  camera.setCamera("minecraft:free", { location, facingLocation });
+  camera.setCamera("minecraft:free", { location, rotation });
 }
 
 function setScriptMode(player, on) {
@@ -236,6 +249,9 @@ function applyPreset(player, preset, withFade = true) {
         y: head.y - 1.2,
         z: head.z - Math.cos(yaw) * 5,
       };
+      // `facingLocation` is deliberate HERE, unlike in the script camera: this one is a
+      // one-shot look-at-the-player shot from 5 blocks away, where aiming at the head is
+      // the intent and cannot collapse into the player.
       player.camera.setCamera("minecraft:free", { location: loc, facingLocation: head });
       system.runTimeout(() => {
         try {
@@ -313,7 +329,7 @@ function applyFallback(player, preset) {
     const target = camTarget(player, off);
     const head = player.getHeadLocation();
     fallback.set(player.id, { preset, off, ease, cur: target, head });
-    setScriptCamera(player, target, head, ease);
+    setScriptCamera(player, target, ease);
   } catch (e) {
     console.warn(`[CameraMenu] fallback failed: ${e}`);
   }
@@ -352,12 +368,7 @@ system.runInterval(() => {
       c.x += (aim.x - c.x) * k;
       c.y += (aim.y - c.y) * k;
       c.z += (aim.z - c.z) * k;
-      setScriptCamera(
-        player,
-        { x: c.x, y: c.y, z: c.z },
-        { x: head.x, y: head.y, z: head.z },
-        state.ease
-      );
+      setScriptCamera(player, { x: c.x, y: c.y, z: c.z }, state.ease);
     } catch { /* player unloaded */ }
   }
 });
@@ -370,10 +381,18 @@ async function openMenu(player) {
     const pt = wantsPortuguese(player);
     const active = activeCam.get(player.id) ?? PRESETS[0];
 
+    // Say when the camera is on hold, because a held camera is cleared, and a cleared
+    // camera is first person: without this line there is nothing in the UI to explain it.
+    const held = suspendReason(player);
     const form = new ActionFormData()
       .title(pt ? "Câmeras" : "Cameras")
       .body(
         (pt ? `Câmera atual: ${label(player, active)}` : `Current camera: ${label(player, active)}`) +
+          (held
+            ? pt
+              ? `\n§eEm espera (${held}) — a câmera volta quando sair.`
+              : `\n§eOn hold (${held}) — the camera comes back when you leave.`
+            : "") +
           (pt
             ? "\n\nSegure Shift parado para abrir este menu."
             : "\n\nHold Shift while standing still to open this menu.")
@@ -570,6 +589,10 @@ system.runInterval(() => {
           suspended.add(player.id);
           fallback.delete(player.id);
           player.camera.clear();
+          // One line per hold. This is the only code path that clears the camera behind the
+          // player's back, so it is the first thing the content log should be asked about
+          // when the camera looks "stuck in first person".
+          console.warn(`[CameraMenu] camera on hold: ${reason}`);
         }
       } else if (suspended.has(player.id)) {
         suspended.delete(player.id);
@@ -673,8 +696,18 @@ function cmdMode(origin, mode) {
   if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
   setScriptMode(player, mode === "script");
   system.run(() => {
+    // Clear first, and do not skip the apply when nothing is selected yet.
+    //
+    // Two things went wrong here. Going straight from a native preset camera to the script
+    // free camera can leave the preset in place, so the switch looks like it did nothing;
+    // clearing first makes it a clean transition. And when no camera had been picked in
+    // this session, `activeCam` was empty, so the command flipped the flag, said "script
+    // mode", and visibly did nothing at all — the camera stayed wherever it was (usually
+    // first person), which reads exactly like "script mode is broken".
+    try { player.camera.clear(); } catch { /* ignore */ }
     const current = activeCam.get(player.id);
-    if (current) applyPreset(player, current);
+    if (current) applyPreset(player, current, false);
+    else restoreLast(player);
   });
   const pt = wantsPortuguese(player);
   return {

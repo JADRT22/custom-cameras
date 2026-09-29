@@ -52,6 +52,19 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The script camera aimed at the player, which locked the view to their back.** It passed
+  `facingLocation: player.getHeadLocation()`, so the camera always pointed at the player:
+  turning the mouse changed nothing visible (yaw only orbited the camera around the player,
+  pitch did nothing), and when the camera sat close to the head that aim vector degenerated
+  and it stared down at itself — a first-person view, or a screen full of grass. It now
+  passes the player's own rotation, the documented form
+  (`camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`): the camera trails the player
+  and looks the same way, so the player stays in frame and looking around works.
+- **`/cameramenu:mode script` did nothing at all in a fresh session.** With no camera picked
+  yet, `activeCam` was empty and the command only flipped the flag: it answered "script
+  mode" and left the camera where it was, which reads exactly like a camera stuck in first
+  person. It now clears the previous camera (a native preset camera can otherwise stay in
+  place) and reapplies the current or last-used one.
 - **Applying the pack could disable a world's achievements.** The manifest had no
   `metadata.product_type`, so the game treated it as a cheat world. That field is now present
   and enforced by the build.

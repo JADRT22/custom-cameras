@@ -12,14 +12,24 @@ shoulder-only, the shoulder cameras are just the most usable ones.
 Built and maintained entirely from the terminal: no GUI on the desktop, the menu lives
 inside the game.
 
+## In game
+
+The two shoulder cameras are the same framing mirrored. Which one you pick decides which
+side of the screen you end up on: over the **right** shoulder puts the camera to your right,
+so you appear on the left of the frame.
+
+| Over the right shoulder (`right`) | Over the left shoulder (`left`) |
+|---|---|
+| ![Right Shoulder](docs/right-shoulder.png) | ![Left Shoulder](docs/left-shoulder.png) |
+
 ## Cameras
 
 | Camera | What it is | `/cameramenu:set` |
 |---|---|---|
 | Default | Back to first person | `default` |
-| Left Shoulder | Shoulder orbit, player pushed to the left (`view_offset [-1.2, 0]`, `radius 2.5`) | `left` |
-| Center Shoulder | Same distance as the other shoulders, but centered behind the player (no side offset) | `center` |
-| Right Shoulder | Shoulder orbit, player pushed to the right (`view_offset [1.2, 0]`) | `right` |
+| Left Shoulder | Over the left shoulder: the camera sits to your left, so you appear on the **right** of the frame (`view_offset [-1.2, 0]`, `radius 2.5`) | `left` |
+| Center Shoulder | Same distance as the other shoulders, but directly behind you (no side offset) | `center` |
+| Right Shoulder | Over the right shoulder: the camera sits to your right, so you appear on the **left** of the frame (`view_offset [1.2, 0]`) | `right` |
 | Boom Shoulder | Built on `fixed_boom`: no orbit, no side offset, fixed distance | `boom` |
 | Far | Distant third person (`radius 7`) | `far` |
 | Low Cinematic | Low `minecraft:free` camera behind the player; resets itself after 3s | `low` |
@@ -272,6 +282,16 @@ They are enforced by the build validator so they cannot regress.
 - Automatic triggers: **Shift is enabled** — hold it while standing still for 2s and the
   menu opens (moving restarts the timer). The spyglass trigger (`ENABLE_SPYGLASS_TRIGGER`)
   is off; `/cameramenu:open` replaces it.
+- **The script camera takes the player's rotation, not a look-at target.** It used to pass
+  `facingLocation: player.getHeadLocation()`, which aims the camera at the player on every
+  tick: the view stays locked to the player's own back, so turning the mouse does nothing you
+  can see, and when the camera sits close to the head that aim vector degenerates into
+  staring down at itself — first person, or a screen of grass. Passing
+  `rotation: player.getRotation()` is the documented form
+  (`camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`): the camera trails the player
+  and looks the same way it does, so the player stays in frame and looking around works.
+  (The Low Cinematic camera still aims at the player on purpose — it is a one-shot shot from
+  5 blocks away, where that is the intent and cannot collapse.)
 - **The script camera is smoothed through `easeOptions`.** Re-positioning a camera every tick
   makes the picture step a whole tick of movement at a time, which reads as flicker (worst in
   the script path, and worse the faster you move). Passing
