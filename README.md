@@ -102,7 +102,7 @@ honouring the free camera — the code is otherwise intact.
 
 ### From a release `.mcaddon`
 
-1. Grab `CameraMenu-v1.1.0.mcaddon` from the releases / `dist/`.
+1. Grab `CameraMenu-v1.1.1.mcaddon` from the releases / `dist/`.
 2. Double-click it (or open it with Minecraft) to import.
 3. Enable it on the world under **Behavior Packs**.
 4. That is all. Leave cheats **off** and the world's experiments untouched — neither is

@@ -6,6 +6,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-29
+
 ### Added
 
 - `/cameramenu:debug` — a command that reports what the script camera is doing and changes the
@@ -36,19 +38,16 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `experiments_ever_used: 0`. Requirements, achievements, installation and troubleshooting are
   back to "no cheats, no experiment", and the chat message for a rejected preset no longer
   blames a missing experiment.
-- **The script camera's aim was investigated, and the look-at target stays.** Passing
-  `rotation: player.getRotation()` (the documented form,
-  `camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`) instead of `facingLocation` was
-  tried to unlock free look; in 26.50 it rendered no camera at all — no error, just sky — so
-  the aim stays on the player, which is the version that renders. The consequence is now
-  written down: the script camera is an **orbit** around the player, so turning swings the
-  world around you and pitch does nothing. `/cameramenu:debug` step 2 re-tests `rotation` in
-  game, so the switch is one line if a build ever honours it.
+- **The script camera's aim was investigated.** Passing `rotation: player.getRotation()` (the
+  documented form, `camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`) instead of
+  `facingLocation` was tried to unlock free look; in 26.50 it rendered no camera at all — no
+  error, just sky. Neither form is reachable now, but the finding is written down because it is
+  the first thing an attempt to revive the path needs: the free-camera *options* are the broken
+  part, not the offsets.
 - **`/cameramenu:mode script` did nothing at all in a fresh session.** With no camera picked
   yet, `activeCam` was empty and the command only flipped the flag: it answered "script
   mode" and left the camera where it was, which reads exactly like a camera stuck in first
-  person. It now clears the previous camera (a native preset camera can otherwise stay in
-  place) and reapplies the current or last-used one.
+  person. It now clears the previous camera (a native preset camera can otherwise stay in  place) and reapplies the current or last-used one.
 
 ## [1.1.0] - 2026-09-29
 
@@ -171,5 +170,6 @@ First release.
 - The locale fallback defaulted to Portuguese, so every player with an unrecognised locale
   got Portuguese strings. English is now the default.
 
+[1.1.1]: https://github.com/JADRT22/custom-cameras/releases/tag/v1.1.1
 [1.1.0]: https://github.com/JADRT22/custom-cameras/releases/tag/v1.1.0
 [1.0.0]: https://github.com/JADRT22/custom-cameras/releases/tag/v1.0.0

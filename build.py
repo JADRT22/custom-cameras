@@ -17,7 +17,7 @@ GAME_DIR = Path.home() / ".var/app/com.trench.trinity.launcher/data/mcpelauncher
 DEV_BP = GAME_DIR / "development_behavior_packs" / "camera_menu_bp"
 
 PACK_NAME = "CameraMenu"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 def fail(msg):
     print(f"  [ERROR] {msg}")
