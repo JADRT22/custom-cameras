@@ -50,6 +50,10 @@ necessário, e ligar qualquer um custa as conquistas do mundo à toa.
 | Far | Terceira pessoa distante | `far` |
 | Low Cinematic | Câmera livre baixa atrás do jogador, volta sozinha após 3s. **Experimental**, veja [Problemas conhecidos](#problemas-conhecidos) | `low` |
 
+Cada ombro também tem **variantes de distância** com o mesmo enquadramento: `left_close`, `left_far`, `center_close`, `center_far`, `right_close` e `right_far` (distância da câmera 1.5 / 2.5 / 4.0). Ficam acessíveis no menu em **Distância do ombro…**, pelo `/cameramenu:set`, e lembram a última escolha — mas ficam de fora do ciclo do `/cameramenu:next`, que mantém os mesmos passos de antes.
+
+Os presets de ombro e boom também trazem **mira assistida nativa** (vanilla desde a 1.21.70, anexada direto no JSON do preset): entidades têm prioridade sobre blocos, então a mira puxa para os mobs enquanto você mira. Ela fica ativa **somente com uma arma na mão** (espadas, arco, balestra, tridente, maça) — de mão vazia ou com ferramentas, a mira fica livre para minerar e construir. Ela só existe enquanto o preset está ativo — trocar para Padrão ou Distante remove a assistência. É uma assistência, não trava de mira, e não precisa de cheats. Verificada no jogo em teclado e mouse (26.50); comportamento em controle não verificado.
+
 ## Comandos
 
 Todos funcionam **sem cheats**.
@@ -57,8 +61,8 @@ Todos funcionam **sem cheats**.
 | Comando | O que faz |
 | --- | --- |
 | `/cameramenu:open` | Abre o menu de câmeras |
-| `/cameramenu:set <default\|left\|center\|right\|boom\|far\|low>` | Troca direto para uma câmera |
-| `/cameramenu:next` | Alterna entre as câmeras persistentes |
+| `/cameramenu:set <preset>` | Troca direto para uma câmera (`default`, `left`, `left_close`, `left_far`, `center`, `center_close`, `center_far`, `right`, `right_close`, `right_far`, `boom`, `far`, `low`) |
+| `/cameramenu:next` | Alterna entre as câmeras persistentes (as variantes de distância ficam de fora do ciclo) |
 | `/cameramenu:reset` | Volta ao padrão (a saída de emergência) |
 
 O menu também abre sozinho quando você segura **Shift parado** por 2 segundos. Mova-se para
@@ -84,7 +88,7 @@ As versões da Script API mudam com frequência. Outras versões do jogo não fo
 ## Problemas conhecidos
 
 - **A Low Cinematic não foi verificada.** Ela usa a câmera `minecraft:free` pela Script API, a mesma forma que acabou não renderizando no 26.50. Pode não fazer nada. Se estiver morta, será removida.
-- Os presets de câmera são lidos quando o mundo carrega, então mudar os valores exige reentrar no mundo (veja [Ajuste fino](#ajuste-fino-das-câmeras)).
+- Os presets de câmera são lidos quando o mundo carrega, então mudar os valores exige reentrar no mundo (veja [Ajuste fino](#ajuste-fino-das-câmeras)). Trocar **entre** presets já carregados é imediato — só editar os valores pede a reentrada.
 
 ## Solução de problemas
 

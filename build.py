@@ -17,7 +17,7 @@ GAME_DIR = Path.home() / ".var/app/com.trench.trinity.launcher/data/mcpelauncher
 DEV_BP = GAME_DIR / "development_behavior_packs" / "camera_menu_bp"
 
 PACK_NAME = "CameraMenu"
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 def fail(msg):
     print(f"  [ERROR] {msg}")
@@ -72,6 +72,41 @@ def validate():
              "(without it the pack disables achievements for the world)")
     ok("metadata.product_type = 'addon' (achievements preserved)")
 
+    # native aim assist (vanilla since 1.21.70): categories file holds the weights, the
+    # preset file maps items -> category, and camera presets reference it with
+    # "aim_assist": {"preset": "..."} so the assist only exists while that preset is on —
+    # no script and no /aimassist command (which would need cheats).
+    aa_cat_names = set()
+    for cf in sorted((SRC / "aim_assist" / "categories").glob("*.json")):
+        try:
+            data = json.loads(cf.read_text())
+        except json.JSONDecodeError as e:
+            fail(f"{cf.name} is not valid JSON: {e}")
+        cats = data.get("minecraft:aim_assist_categories", {}).get("categories", [])
+        if not cats:
+            fail(f"{cf.name}: no categories defined")
+        for c in cats:
+            name = c.get("name", "")
+            if not name.startswith("cm:"):
+                fail(f"{cf.name}: category outside the cm: namespace ({name})")
+            aa_cat_names.add(name)
+    aa_ids = []
+    for af in sorted((SRC / "aim_assist" / "presets").glob("*.json")):
+        try:
+            data = json.loads(af.read_text())
+        except json.JSONDecodeError as e:
+            fail(f"{af.name} is not valid JSON: {e}")
+        obj = data.get("minecraft:aim_assist_preset", {})
+        ident = obj.get("identifier", "")
+        if not ident.startswith("cm:"):
+            fail(f"{af.name}: identifier outside the cm: namespace ({ident})")
+        for field in ("default_item_settings", "hand_settings"):
+            if field in obj and obj[field] not in aa_cat_names:
+                fail(f"{af.name}: {field} '{obj[field]}' has no matching category")
+        aa_ids.append(ident)
+    if not aa_ids:
+        fail("no aim assist presets found in aim_assist/presets/*.json")
+
     # native JSON presets: ONE OBJECT PER FILE (1.21.80+/26.x format), namespace cm: only
     presets_dir = SRC / "cameras" / "presets"
     preset_files = sorted(presets_dir.glob("*.json"))
@@ -125,10 +160,14 @@ def validate():
         if "entity_offset" in obj and (not isinstance(obj["entity_offset"], list)
                                        or len(obj["entity_offset"]) != 3):
             fail(f"{pf.name}: entity_offset must be [x, y, z]")
+        ref = obj.get("aim_assist", {}).get("preset") if isinstance(obj.get("aim_assist"), dict) else None
+        if ref is not None and ref not in aa_ids:
+            fail(f"{pf.name}: aim_assist references unknown preset '{ref}'")
         idents.append(ident)
     if len(idents) != len(set(idents)):
         fail("duplicate preset identifiers")
     ok(f"{len(idents)} valid presets (one object per file): {', '.join(idents)}")
+    ok(f"aim assist: preset {', '.join(aa_ids)} -> categories {', '.join(sorted(aa_cat_names))}")
 
     # script <-> presets consistency
     script = (SRC / "scripts" / "main.js").read_text()

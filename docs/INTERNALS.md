@@ -54,6 +54,31 @@ If you try the path again, these are the starting points:
 - **Adjustment board.** `/cameramenu:tune` was a board of buttons rather than sliders. `server-ui` 2.x changed the signature to `slider(label, min, max, options)` (the 1.x positional form throws `Incorrect number of arguments to function. Expected 3-4, received 5`), and the sliders in this client opened but their handles would not move and the form submitted at the minimum. Buttons avoid the whole class of problem, and each click re-applies the camera.
 - Why the board could never drive a native preset: a preset is a file the game reads at load and cannot be changed while you play.
 
+## Aim assist (native, no script)
+
+Aim assist left the experimental toggles in 1.21.70. Two ways to turn it on: the `/aimassist`
+command ("Requires Cheats Enabled: Yes" in the Microsoft command list — as a typed command it
+costs achievements) or an `aim_assist` block inside the camera preset JSON, which needs nothing.
+This add-on uses the second:
+
+```json
+"aim_assist": { "preset": "cm:aim_preset" }
+```
+
+- `aim_assist/presets/*.json` maps items (or the empty hand) to categories. Here it maps only
+  weapons to `cm:combat`; `default_item_settings` and `hand_settings` point at `cm:off` — an
+  all-zero category. First release mapped everything, and the assist dragged the crosshair off
+  the block being mined; weapons-only was the fix.
+- `aim_assist/categories/*.json` holds the weights: in `cm:combat` `block_default` is 0 and
+  `entity_default` is 70, so the crosshair pulls toward mobs and ignores scenery. Specific
+  entries override the defaults.
+- The assist exists only while the preset is applied; `camera.clear()` removes it. First person
+  is not supported by aim assist at all — which is fine, only the shoulder/boom presets have it.
+- Verified in 26.50 on keyboard and mouse: preset loads with zero schema errors in the content
+  log and the assist pulls toward mobs. Controller behaviour not verified.
+- Schema guard in `build.py`: `cm:` namespaces only, every category referenced by a preset must
+  exist, and `default_item_settings`/`hand_settings` must point at defined categories.
+
 ## Debugging tips
 
 - Always read the **newest** `ContentLog*.txt` rather than screenshots. Old sessions mix into screenshots and it is easy to chase an error that was already fixed.

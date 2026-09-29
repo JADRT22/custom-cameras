@@ -1,0 +1,22 @@
+{
+  "format_version": "1.21.70",
+  "minecraft:aim_assist_preset": {
+    "identifier": "cm:aim_preset",
+    "item_settings": {
+      "minecraft:wooden_sword": "cm:combat",
+      "minecraft:stone_sword": "cm:combat",
+      "minecraft:iron_sword": "cm:combat",
+      "minecraft:golden_sword": "cm:combat",
+      "minecraft:diamond_sword": "cm:combat",
+      "minecraft:netherite_sword": "cm:combat",
+      "minecraft:bow": "cm:combat",
+      "minecraft:crossbow": "cm:combat",
+      "minecraft:trident": "cm:combat",
+      "minecraft:mace": "cm:combat"
+    },
+    "default_item_settings": "cm:off",
+    "hand_settings": "cm:off",
+    "exclusion_list": [],
+    "liquid_targeting_list": []
+  }
+}

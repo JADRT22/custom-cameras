@@ -2,6 +2,9 @@
   "format_version": "1.21.90",
   "minecraft:camera_preset": {
     "identifier": "cm:boom_right",
-    "inherit_from": "minecraft:fixed_boom"
+    "inherit_from": "minecraft:fixed_boom",
+    "aim_assist": {
+      "preset": "cm:aim_preset"
+    }
   }
 }

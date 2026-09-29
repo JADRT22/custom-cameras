@@ -50,6 +50,10 @@ turning either on costs that world its achievements for nothing.
 | Far | Distant third person | `far` |
 | Low Cinematic | Low free camera behind the player, resets itself after 3s. **Experimental**, see [Known issues](#known-issues) | `low` |
 
+Each shoulder also has **distance variants** with the same framing: `left_close`, `left_far`, `center_close`, `center_far`, `right_close` and `right_far` (camera distance 1.5 / 2.5 / 4.0). They are reachable in the menu under **Shoulder distance…**, via `/cameramenu:set`, and they remember your last pick — but they stay out of the `/cameramenu:next` cycle, so the loop keeps the same steps as before.
+
+The shoulder and boom presets also carry **native aim assist** (vanilla since 1.21.70, attached directly in the preset JSON): entities get priority over blocks, so the crosshair pulls toward mobs while aiming. It is active **only while holding a weapon** (swords, bow, crossbow, trident, mace) — with an empty hand or tools the crosshair stays free for mining and building. It exists only while the preset is on — switching to Default or Far removes it. It is an assist, not a lock-on, and it needs no cheats. Verified in game on keyboard and mouse (26.50); controller behaviour is not verified.
+
 ## Commands
 
 All commands work **without cheats**.
@@ -57,8 +61,8 @@ All commands work **without cheats**.
 | Command | What it does |
 | --- | --- |
 | `/cameramenu:open` | Open the camera menu |
-| `/cameramenu:set <default\|left\|center\|right\|boom\|far\|low>` | Switch directly to a camera |
-| `/cameramenu:next` | Cycle through the persistent cameras |
+| `/cameramenu:set <preset>` | Switch directly to a camera (`default`, `left`, `left_close`, `left_far`, `center`, `center_close`, `center_far`, `right`, `right_close`, `right_far`, `boom`, `far`, `low`) |
+| `/cameramenu:next` | Cycle through the persistent cameras (distance variants stay out of the loop) |
 | `/cameramenu:reset` | Back to default (the escape hatch) |
 
 The menu also opens on its own when you hold **Shift while standing still** for 2 seconds.
@@ -84,7 +88,7 @@ Script API versions change often. Other game versions are untested and may need 
 ## Known issues
 
 - **Low Cinematic is unverified.** It uses the `minecraft:free` camera through the script API, the same form that turned out not to render in 26.50. It may do nothing. If it is dead, it will be removed.
-- Camera presets are read when the world loads, so changing their values requires re-entering the world (see [Tuning](#tuning-the-cameras)).
+- Camera presets are read when the world loads, so changing their values requires re-entering the world (see [Tuning](#tuning-the-cameras)). Switching **between** loaded presets is instant — only editing their values needs the re-entry.
 
 ## Troubleshooting
 

@@ -6,6 +6,42 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-29
+
+### Added
+
+- **Distance variants for each shoulder** — six new native presets (`cm:shoulder_left_close`,
+  `cm:shoulder_left_far`, `cm:shoulder_center_close`, `cm:shoulder_center_far`,
+  `cm:shoulder_right_close`, `cm:shoulder_right_far`), same framing as their base preset with
+  camera `radius` 1.5 (close) and 4.0 (far), against the base 2.5. This is the in-game way to
+  adjust camera distance without the script path: switching between loaded native presets is
+  instant, and only editing their values needs a world re-entry (`tune.py`).
+- **"Shoulder distance…" submenu** — when the active camera is a shoulder, the menu shows an
+  extra button that opens a second screen with close / base / far for that shoulder, marking
+  the current one. The main menu keeps one row per camera instead of growing from 7 to 13
+  buttons.
+- The distance variants are pickable via `/cameramenu:set` (the enum now lists all 13 keys) and
+  are saved as the last camera, but they stay **out of the `/cameramenu:next` cycle**
+  (`cycle: false`), so the loop keeps the same steps as before. `persist` (remember last pick)
+  and cycle membership are now separate flags.
+- **Native aim assist on the shoulder and boom presets.** Aim assist left the experimental
+  toggles in 1.21.70 and can be attached straight to a camera preset
+  (`"aim_assist": {"preset": ...}`), so no script and no `/aimassist` command (which requires
+  cheats) are needed. Entities weigh 70 and blocks 0, so the crosshair pulls toward mobs while
+  a shoulder camera is on and the effect is gone the moment the camera is cleared. Default and
+  Far stay assist-free on purpose.
+
+### Fixed
+
+- **The shoulder camera no longer disappears while gliding with an elytra.** Gliding was on the
+  context-suspend list (like beds and boats), so the camera was cleared mid-flight and restored
+  on landing — which read as the preset being broken. The native orbit follows the glide fine,
+  so gliding is no longer a suspend reason; beds and boats still are.
+- **The aim assist no longer pulls the crosshair with an empty hand or tools.** It was mapped to
+  every item and the empty hand, so mining aimed at nearby mobs instead of the block being
+  broken. The assist is now active only while holding a weapon (swords, bow, crossbow, trident,
+  mace); everything else maps to an inert all-zero category.
+
 ## [1.1.1] - 2026-09-29
 
 ### Added

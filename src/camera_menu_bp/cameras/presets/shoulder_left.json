@@ -3,8 +3,18 @@
   "minecraft:camera_preset": {
     "identifier": "cm:shoulder_left",
     "inherit_from": "minecraft:follow_orbit",
-    "view_offset": [-1.2, 0.0],
-    "entity_offset": [0.0, 0.0, 0.0],
+    "aim_assist": {
+      "preset": "cm:aim_preset"
+    },
+    "view_offset": [
+      -1.2,
+      0.0
+    ],
+    "entity_offset": [
+      0.0,
+      0.0,
+      0.0
+    ],
     "radius": 2.5,
     "control_scheme": "camera_relative"
   }

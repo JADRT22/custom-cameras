@@ -50,16 +50,31 @@ const ENABLE_SPYGLASS_TRIGGER = false;
 // true to bring all of that back and re-test; the code below is otherwise intact.
 const ENABLE_SCRIPT_PATH = false;
 
-// key, presetId (null = default/first person), persist
+// key, presetId (null = default/first person), persist, cycle
+// cycle = false keeps the preset out of /cameramenu:next; it is still reachable in the menu
+// and via /cameramenu:set, and still saved as the last choice (persist).
 // fb = fallback offsets [side, back, up] used when the native preset fails
 const PRESETS = [
   { key: "default", id: null, persist: true, fb: null, pt: "Padrão (1ª pessoa)", en: "Default (first person)" },
   { key: "left", id: "cm:shoulder_left", persist: true, fb: [-0.9, 2.5, 0.4], pt: "Ombro Esquerdo", en: "Left Shoulder" },
+  { key: "left_close", id: "cm:shoulder_left_close", persist: true, cycle: false, fb: [-0.9, 2.5, 0.4], pt: "Ombro Esquerdo (perto)", en: "Left Shoulder (close)" },
+  { key: "left_far", id: "cm:shoulder_left_far", persist: true, cycle: false, fb: [-0.9, 2.5, 0.4], pt: "Ombro Esquerdo (longe)", en: "Left Shoulder (far)" },
   { key: "center", id: "cm:shoulder_center", persist: true, fb: [0, 2.5, 0.4], pt: "Ombro Central", en: "Center Shoulder" },
+  { key: "center_close", id: "cm:shoulder_center_close", persist: true, cycle: false, fb: [0, 2.5, 0.4], pt: "Ombro Central (perto)", en: "Center Shoulder (close)" },
+  { key: "center_far", id: "cm:shoulder_center_far", persist: true, cycle: false, fb: [0, 2.5, 0.4], pt: "Ombro Central (longe)", en: "Center Shoulder (far)" },
   { key: "right", id: "cm:shoulder_right", persist: true, fb: [0.9, 2.5, 0.4], pt: "Ombro Direito", en: "Right Shoulder" },
+  { key: "right_close", id: "cm:shoulder_right_close", persist: true, cycle: false, fb: [0.9, 2.5, 0.4], pt: "Ombro Direito (perto)", en: "Right Shoulder (close)" },
+  { key: "right_far", id: "cm:shoulder_right_far", persist: true, cycle: false, fb: [0.9, 2.5, 0.4], pt: "Ombro Direito (longe)", en: "Right Shoulder (far)" },
   { key: "boom", id: "cm:boom_right", persist: true, fb: [0.9, 2.5, 0.4], pt: "Ombro Boom (sem órbita)", en: "Boom Shoulder (no orbit)" },
   { key: "far", id: "cm:far", persist: true, fb: [0, 7, 1.0], pt: "Distante (3ª pessoa longe)", en: "Far (3rd person)" },
   { key: "low", id: "minecraft:free", persist: false, fb: null, pt: "Cinemática Baixa (temporária)", en: "Low Cinematic (temporary)" },
+];
+
+// distance variants grouped per shoulder for the "shoulder distance" submenu
+const DISTANCE_GROUPS = [
+  { base: "left", pt: "Ombro Esquerdo", en: "Left Shoulder", variants: ["left_close", "left", "left_far"] },
+  { base: "center", pt: "Ombro Central", en: "Center Shoulder", variants: ["center_close", "center", "center_far"] },
+  { base: "right", pt: "Ombro Direito", en: "Right Shoulder", variants: ["right_close", "right", "right_far"] },
 ];
 
 /** @type {Map<string, number>} playerId -> sneak start tick */
@@ -438,6 +453,14 @@ async function openMenu(player) {
     for (const p of PRESETS) form.button(label(player, p));
     // the adjust board only drives the script camera, so it goes with it
     if (ENABLE_SCRIPT_PATH) form.button(pt ? "Ajustar camera (script)" : "Adjust camera (script)");
+    // distance submenu for the current shoulder (native presets — works without the script path)
+    const baseKey = active.key.replace(/_(close|far)$/, "");
+    const shoulderGroup = DISTANCE_GROUPS.find((g) => g.base === baseKey);
+    let shoulderIndex = -1;
+    if (shoulderGroup) {
+      shoulderIndex = PRESETS.length + (ENABLE_SCRIPT_PATH ? 1 : 0);
+      form.button(pt ? "Distância do ombro…" : "Shoulder distance…");
+    }
 
     const res = await form.show(player);
     if (res.canceled || res.selection === undefined) return;
@@ -445,6 +468,12 @@ async function openMenu(player) {
       // this menu holds the latch: release it before opening the next form
       menuOpen.delete(player.id);
       await openTune(player);
+      return;
+    }
+    if (shoulderIndex !== -1 && res.selection === shoulderIndex) {
+      // this menu holds the latch: release it before opening the next form
+      menuOpen.delete(player.id);
+      await openShoulderDistance(player, shoulderGroup);
       return;
     }
     const chosen = PRESETS[res.selection];
@@ -456,6 +485,45 @@ async function openMenu(player) {
     );
   } catch (e) {
     console.warn(`[CameraMenu] erro no menu: ${e}`);
+  } finally {
+    menuOpen.delete(player.id);
+  }
+}
+
+// ==================== Shoulder distance submenu (native, no script needed) ====================
+//
+// The distance variants stay out of /cameramenu:next (cycle: false) so the cycle keeps its
+// original steps; they are reached here or via /cameramenu:set. Switching between loaded
+// native presets is instant — only editing their JSON needs a world re-entry (tune.py).
+async function openShoulderDistance(player, group) {
+  if (menuOpen.has(player.id)) return;
+  menuOpen.set(player.id, system.currentTick);
+  try {
+    const pt = wantsPortuguese(player);
+    const presets = group.variants
+      .map((key) => PRESETS.find((p) => p.key === key))
+      .filter(Boolean);
+    const active = activeCam.get(player.id);
+    const form = new ActionFormData()
+      .title(pt ? `Distância: ${group.pt}` : `Distance: ${group.en}`)
+      .body(
+        pt
+          ? "Troca de preset nativo é imediata. Editar valores exige reentrar no mundo (tune.py)."
+          : "Switching native presets is instant. Editing values needs a world re-entry (tune.py)."
+      );
+    for (const p of presets) {
+      form.button(label(player, p) + (active && active.key === p.key ? " §2✔" : ""));
+    }
+    const res = await form.show(player);
+    if (res.canceled || res.selection === undefined) return;
+    const chosen = presets[res.selection];
+    if (!chosen) return;
+    applyPreset(player, chosen);
+    player.sendMessage(
+      pt ? `§aCâmera: ${label(player, chosen)}` : `§aCamera: ${label(player, chosen)}`
+    );
+  } catch (e) {
+    console.warn(`[CameraMenu] erro no submenu de distância: ${e}`);
   } finally {
     menuOpen.delete(player.id);
   }
@@ -609,6 +677,9 @@ if (ENABLE_SPYGLASS_TRIGGER) world.afterEvents.itemUse.subscribe(({ source, item
 // in the way, so it is put on hold and restored when the context ends. The check is wrapped
 // in try/catch on purpose: if a property is ever unavailable the camera is left alone
 // rather than suspended on a guess.
+// Gliding (elytra) was here too and is deliberately NOT: the report from play was that the
+// shoulder camera disappearing mid-flight read as a bug, not as a feature — with the native
+// preset the orbit follows the glide fine, so the camera stays.
 const SUSPEND_POLL = 10; // 0.5s
 
 function suspendReason(player) {
@@ -616,7 +687,6 @@ function suspendReason(player) {
     if (player.isSleeping) return "sleeping";
     const riding = player.getComponent("minecraft:riding");
     if (riding && riding.entityRidingOn) return "riding";
-    if (player.isGliding) return "gliding";
   } catch { /* never suspend on a guess */ }
   return null;
 }
@@ -688,7 +758,7 @@ function cmdSet(origin, key) {
   if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
   const preset = PRESETS.find((p) => p.key === key);
   if (!preset) {
-    return { status: CustomCommandStatus.Failure, message: "Presets: default, left, center, right, boom, far, low" };
+    return { status: CustomCommandStatus.Failure, message: `Presets: ${PRESETS.map((p) => p.key).join(", ")}` };
   }
   system.run(() => applyPreset(player, preset));
   return {
@@ -766,8 +836,9 @@ function cmdMode(origin, mode) {
 function cmdNext(origin) {
   const player = asPlayer(origin);
   if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
-  // cycle the persistent cameras only, so the one-shot cinematic is never in the way
-  const cycle = PRESETS.filter((p) => p.persist);
+  // cycle the persistent, in-cycle cameras only: the one-shot cinematic and the distance
+  // variants (cycle: false) stay out, so the loop keeps the same steps as before
+  const cycle = PRESETS.filter((p) => p.persist && p.cycle !== false);
   const current = activeCam.get(player.id) ?? PRESETS[0];
   const index = cycle.findIndex((p) => p.key === current.key);
   const preset = cycle[(index + 1) % cycle.length] ?? cycle[0];

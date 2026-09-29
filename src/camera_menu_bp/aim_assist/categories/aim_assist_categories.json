@@ -1,0 +1,80 @@
+{
+  "format_version": "1.21.70",
+  "minecraft:aim_assist_categories": {
+    "categories": [
+      {
+        "name": "cm:combat",
+        "priorities": {
+          "block_default": 0,
+          "entity_default": 70,
+          "blocks": {},
+          "entities": {
+            "minecraft:player": 70,
+            "minecraft:armor_stand": 70,
+            "minecraft:villager": 70,
+            "minecraft:wandering_trader": 70,
+            "minecraft:zombie": 70,
+            "minecraft:husk": 70,
+            "minecraft:drowned": 70,
+            "minecraft:zombie_villager": 70,
+            "minecraft:skeleton": 70,
+            "minecraft:stray": 70,
+            "minecraft:bogged": 70,
+            "minecraft:spider": 70,
+            "minecraft:cave_spider": 70,
+            "minecraft:creeper": 70,
+            "minecraft:witch": 70,
+            "minecraft:pillager": 70,
+            "minecraft:vindicator": 70,
+            "minecraft:evocation_illager": 70,
+            "minecraft:ravager": 70,
+            "minecraft:vex": 70,
+            "minecraft:enderman": 70,
+            "minecraft:endermite": 70,
+            "minecraft:silverfish": 70,
+            "minecraft:phantom": 70,
+            "minecraft:slime": 70,
+            "minecraft:magma_cube": 70,
+            "minecraft:blaze": 70,
+            "minecraft:ghast": 70,
+            "minecraft:hoglin": 70,
+            "minecraft:zoglin": 70,
+            "minecraft:piglin": 70,
+            "minecraft:piglin_brute": 70,
+            "minecraft:zombified_piglin": 70,
+            "minecraft:warden": 70,
+            "minecraft:wither": 70,
+            "minecraft:ender_dragon": 70,
+            "minecraft:cow": 70,
+            "minecraft:sheep": 70,
+            "minecraft:pig": 70,
+            "minecraft:chicken": 70,
+            "minecraft:rabbit": 70,
+            "minecraft:horse": 70,
+            "minecraft:donkey": 70,
+            "minecraft:mule": 70,
+            "minecraft:camel": 70,
+            "minecraft:llama": 70,
+            "minecraft:trader_llama": 70,
+            "minecraft:wolf": 70,
+            "minecraft:cat": 70,
+            "minecraft:ocelot": 70,
+            "minecraft:fox": 70,
+            "minecraft:bee": 70,
+            "minecraft:iron_golem": 70,
+            "minecraft:snow_golem": 70
+          }
+        }
+      },
+      {
+        "name": "cm:off",
+        "priorities": {
+          "block_default": 0,
+          "entity_default": 0,
+          "blocks": {},
+          "entities": {}
+        }
+      }
+    ]
+  }
+}
