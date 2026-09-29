@@ -1,5 +1,7 @@
 # Custom Cameras (Menu)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Camera presets for **Minecraft Bedrock 26.50** — switched from an in-game menu or slash
 commands, on any world, **without enabling cheats**.
 
@@ -200,4 +202,4 @@ no `[Camera][error]` lines means the native presets loaded fine.
 
 ## License
 
-TBD — see the repository owner.
+[MIT](LICENSE).

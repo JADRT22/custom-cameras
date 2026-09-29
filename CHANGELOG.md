@@ -41,4 +41,4 @@ First release.
 - The locale fallback defaulted to Portuguese, so every player with an unrecognised locale
   got Portuguese strings. English is now the default.
 
-[1.0.0]: https://github.com/OWNER/REPO/releases/tag/v1.0.0
+[1.0.0]: https://github.com/JADRT22/custom-cameras/releases/tag/v1.0.0
