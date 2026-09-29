@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Build output (the .mcaddon is attached to releases, not committed)
+dist/
+
+# Backups written next to level.dat / global_resource_packs.json by the tooling
+*.camera-menu-backup
