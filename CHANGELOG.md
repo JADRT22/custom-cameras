@@ -8,10 +8,24 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `/cameramenu:debug` — a temporary command that reports what the script camera is doing and
-  changes the camera in three named steps. It exists because a camera that does nothing logs
-  nothing, so there is no other way to tell "worked", "did nothing" and "was refused" apart.
-  Remove it before a release.
+- `/cameramenu:debug` — a command that reports what the script camera is doing and changes the
+  camera in three named steps. It exists because a camera that does nothing logs nothing, so
+  there is no other way to tell "worked", "did nothing" and "was refused" apart. It ships
+  hidden behind `ENABLE_SCRIPT_PATH`, with the path it debugs.
+
+### Changed
+
+- **The script camera path is hidden rather than deleted.** It is the only path that needs no
+  experiment, and in 26.50 it never rendered: aiming the free camera at the player collapses
+  the view to first person or to the ground, and passing the player's rotation renders no
+  camera at all. Everything that reached it now sits behind `ENABLE_SCRIPT_PATH` in
+  `scripts/main.js` — no menu entry, no `/cameramenu:mode|tune|debug`, and no silent fallback —
+  so a world without the experiment is told so in chat instead of appearing to work. Flipping
+  the flag brings the whole path back; the code is otherwise intact.
+- **The add-on now needs the experiment, and the README says so.** Native is the only path, so
+  the "no experiment, achievements preserved" framing is gone: it rested entirely on the path
+  that does not render. The README's requirements, installation step, `play.sh` section,
+  tuning section and troubleshooting were all rewritten to match.
 
 ### Fixed
 
@@ -48,8 +62,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The script camera is a first-class path, not only an emergency fallback.** It can be
   picked by hand (`/cameramenu:mode script`), it is what the in-game sliders tune, and the
   choice is remembered per player/world — so a world without the experiment can run the
-  add-on instead of failing to a degraded mode. Verified in game on 26.50: with the
-  experiment off, the script camera moves the shoulder camera.
+  add-on instead of failing to a degraded mode. **This release also claimed that was verified
+  in game on 26.50. It was not: the claim rested on reading the chat message the command
+  prints, and the camera never actually rendered. See Unreleased.**
 - **The camera is suspended in bed, in a vehicle and while gliding**, and restored when the
   context ends. The check runs inside a `try/catch` so the camera is never suspended on a
   guess.

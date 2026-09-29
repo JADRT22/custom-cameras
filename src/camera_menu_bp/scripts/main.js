@@ -9,19 +9,17 @@ import {
 import { ActionFormData } from "@minecraft/server-ui";
 
 // ============================================================
-// Custom Cameras — two camera paths, one of them achievement-safe.
+// Custom Cameras — native camera presets.
 //
-//   native  the engine drives a cameras/presets/*.json preset (follow_orbit /
-//           fixed_boom). Smoothest, but the world needs the
-//           experimental_creator_cameras experiment, and ANY experiment disables
-//           that world's achievements.
-//   script  this script repositions a minecraft:free camera every tick. Needs no
-//           experiment and no cheats, so it is the path that keeps achievements.
+// The product is the native path: the engine drives a cameras/presets/*.json preset
+// (follow_orbit / fixed_boom). Those files only load on a world with the
+// experimental_creator_cameras experiment enabled, and enabling an experiment
+// disables that world's achievements for good — so this belongs on a world whose
+// achievements you do not mind losing. The manifest carries the add-on flag
+// (metadata.product_type) so the pack itself is never the thing that costs them.
 //
-// The add-on tries native first and drops to the script camera on its own when a
-// native preset fails — which is the normal case on a world without the experiment,
-// i.e. any world whose achievements are still worth keeping. The camera never
-// simply stops working.
+// The script-driven free camera is still in this file, but hidden behind
+// ENABLE_SCRIPT_PATH below. See that flag for why it is off.
 // ============================================================
 
 const HOLD_TICKS = 40; // hold shift for 2s
@@ -36,6 +34,20 @@ const SPAWN_DELAY_TICKS = 10; // wait after spawn before restoring the camera
 // opens; moving cancels the timer. Spyglass stays off (it is the /cameramenu:open path).
 const ENABLE_SHIFT_TRIGGER = true;
 const ENABLE_SPYGLASS_TRIGGER = false;
+
+// ---- The script camera: kept, but hidden ----
+//
+// The script path is the only one that needs no experiment, and therefore the only one that
+// leaves a world's achievements alone. It also never rendered in 26.50: aiming the free
+// camera at the player collapses the view to first person or to the ground, and passing the
+// player's rotation renders no camera at all. The native presets do render, so native is the
+// product and the script path is not offered.
+//
+// Everything that reaches it is gated on this flag — no menu entry, no
+// `/cameramenu:mode|tune|debug`, and no silent fallback that would trade a working native
+// camera for a broken one — instead of deleting ~350 lines that a future build might honour.
+// Flip it to true to bring all of that back and re-test; the code below is otherwise intact.
+const ENABLE_SCRIPT_PATH = false;
 
 // key, presetId (null = default/first person), persist
 // fb = fallback offsets [side, back, up] used when the native preset fails
@@ -199,6 +211,12 @@ function setScriptMode(player, on) {
 }
 
 function loadScriptMode(player) {
+  // With the script path hidden, a `cm:script_mode` left behind by an earlier version must
+  // not be able to switch a player onto it — otherwise the hidden path comes back on its own.
+  if (!ENABLE_SCRIPT_PATH) {
+    forceScript.delete(player.id);
+    return;
+  }
   try {
     if (player.getDynamicProperty(PROP_SCRIPT) === true) forceScript.add(player.id);
     else forceScript.delete(player.id);
@@ -234,7 +252,8 @@ function applyPreset(player, preset, withFade = true) {
   try {
     if (preset.id === null) {
       player.camera.clear();
-    } else if (preset.fb && (brokenPresets.has(preset.id) || forceScript.has(player.id))) {
+    } else if (ENABLE_SCRIPT_PATH && preset.fb &&
+               (brokenPresets.has(preset.id) || forceScript.has(player.id))) {
       // native preset unavailable in this world: use the fallback (free camera per tick)
       applyFallback(player, preset);
     } else if (preset.id === "minecraft:free") {
@@ -266,18 +285,31 @@ function applyPreset(player, preset, withFade = true) {
   } catch (e) {
     console.warn(`[CameraMenu] failed to apply camera: ${e}`);
     if (preset.fb) {
-      // marca como quebrado e ativa o plano B na hora
       brokenPresets.add(preset.id);
-      // This is the expected path on a world without the experimental camera presets —
-      // and the one that keeps that world's achievements. Inform, do not alarm.
-      player.sendMessage(
-        wantsPortuguese(player)
-          ? "§7[Câmeras] modo script ativo — não precisa do experimento nem de cheats (conquistas preservadas)."
-          : "§7[Cameras] script mode active — no experiment and no cheats needed (achievements stay on)."
-      );
-      applyFallback(player, preset);
-      activeCam.set(player.id, preset);
-      if (withFade) fade(player);
+      if (ENABLE_SCRIPT_PATH) {
+        // This is the expected path on a world without the experimental camera presets —
+        // and the one that keeps that world's achievements. Inform, do not alarm.
+        player.sendMessage(
+          wantsPortuguese(player)
+            ? "§7[Câmeras] modo script ativo — não precisa do experimento nem de cheats (conquistas preservadas)."
+            : "§7[Cameras] script mode active — no experiment and no cheats needed (achievements stay on)."
+        );
+        applyFallback(player, preset);
+        activeCam.set(player.id, preset);
+        if (withFade) fade(player);
+      } else {
+        // A native preset would not apply, which in practice means this world has no
+        // experimental camera presets. Put the camera back to a defined state and say what
+        // is actually wrong, rather than leaving the camera wherever it happened to be and
+        // letting the player guess.
+        try { player.camera.clear(); } catch { /* ignore */ }
+        activeCam.delete(player.id);
+        player.sendMessage(
+          wantsPortuguese(player)
+            ? "§c[Câmeras] este mundo não tem 'Experimental Creator Camera Features' ligado, então os presets não carregam. Ligue em Configurações do mundo → Experimentos (perde as conquistas deste mundo) ou use outro mundo."
+            : "§c[Cameras] this world does not have 'Experimental Creator Camera Features' enabled, so the presets never loaded. Turn it on in World Settings → Experiments (it costs this world its achievements) or use another world."
+        );
+      }
     }
     return;
   }
@@ -342,7 +374,7 @@ const LERP = 0.35;
 const LEAD_TICKS = 1 / LERP;
 const SNAP_DISTANCE = 4;
 
-system.runInterval(() => {
+if (ENABLE_SCRIPT_PATH) system.runInterval(() => {
   for (const player of world.getAllPlayers()) {
     const state = fallback.get(player.id);
     if (!state) continue;
@@ -400,11 +432,12 @@ async function openMenu(player) {
             : "\n\nHold Shift while standing still to open this menu.")
       );
     for (const p of PRESETS) form.button(label(player, p));
-    form.button(pt ? "Ajustar camera (script)" : "Adjust camera (script)");
+    // the adjust board only drives the script camera, so it goes with it
+    if (ENABLE_SCRIPT_PATH) form.button(pt ? "Ajustar camera (script)" : "Adjust camera (script)");
 
     const res = await form.show(player);
     if (res.canceled || res.selection === undefined) return;
-    if (res.selection === PRESETS.length) {
+    if (ENABLE_SCRIPT_PATH && res.selection === PRESETS.length) {
       // this menu holds the latch: release it before opening the next form
       menuOpen.delete(player.id);
       await openTune(player);
@@ -424,7 +457,10 @@ async function openMenu(player) {
   }
 }
 
-// ==================== Adjust board (A1) ====================
+// ==================== Adjust board (A1) — hidden with the script path ====================
+//
+// Unreachable while ENABLE_SCRIPT_PATH is false: it can only write tunings for the script
+// camera, which is the path that does not render.
 //
 // No sliders here on purpose. The modal sliders in this build opened, but their handles
 // would not move and they submitted at their minimum — height -2 dropped the camera into the
@@ -616,8 +652,8 @@ world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
   if (!initialSpawn) return;
   player.sendMessage(
     wantsPortuguese(player)
-      ? "§7[Câmeras] §fAtivo! §eSegure Shift parado§f abre o menu (ou §e/cameramenu:open§f) | §e/cameramenu:next§f cicla | §e/cameramenu:mode script§f testa a câmera por script | §e/cameramenu:reset§f destrava"
-      : "§7[Cameras] §fRunning! §eHold Shift standing still§f opens the menu (or §e/cameramenu:open§f) | §e/cameramenu:next§f cycles | §e/cameramenu:mode script§f tests the script camera | §e/cameramenu:reset§f unlocks"
+      ? "§7[Câmeras] §fAtivo! §eSegure Shift parado§f abre o menu (ou §e/cameramenu:open§f) | §e/cameramenu:next§f cicla | §e/cameramenu:reset§f destrava"
+      : "§7[Cameras] §fRunning! §eHold Shift standing still§f opens the menu (or §e/cameramenu:open§f) | §e/cameramenu:next§f cycles | §e/cameramenu:reset§f unlocks"
   );
 });
 
@@ -668,14 +704,12 @@ function cmdReset(origin) {
       activeCam.delete(player.id);
       fallback.delete(player.id);
       player.setDynamicProperty(PROP_LAST, "default");
-      // the escape hatch: a bad adjustment must never be able to strand the camera, so
-      // this also clears every tuning and drops script mode
+      // the escape hatch. It also clears any tuning and script-mode flag an earlier version
+      // left on this player, so a stale property can never strand the camera.
       clearAllTune(player);
       setScriptMode(player, false);
       player.sendMessage(
-        wantsPortuguese(player)
-          ? "§aCâmera resetada e ajustes limpos."
-          : "§aCamera reset and adjustments cleared."
+        wantsPortuguese(player) ? "§aCâmera resetada." : "§aCamera reset."
       );
     } catch (e) {
       player.sendMessage(
@@ -744,9 +778,10 @@ function cmdNext(origin) {
 
 // ==================== Debug (temporary) ====================
 //
-// The script camera produces no error in the content log whether it works, does nothing or
-// is refused, so the only way to tell the three apart is to ask the game for the numbers and
-// to change the camera in named steps while the player watches. Remove before a release.
+// Hidden with the rest of the script path (ENABLE_SCRIPT_PATH). The script camera produces no
+// error in the content log whether it works, does nothing or is refused, so the only way to
+// tell those three apart is to ask the game for the numbers and to change the camera in named
+// steps while the player watches.
 function cmdDebug(origin) {
   const player = asPlayer(origin);
   if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
@@ -807,7 +842,9 @@ function cmdDebug(origin) {
 
 system.beforeEvents.startup.subscribe((init) => {
   init.customCommandRegistry.registerEnum("cameramenu:preset", PRESETS.map((p) => p.key));
-  init.customCommandRegistry.registerEnum("cameramenu:mode", ["native", "script"]);
+  if (ENABLE_SCRIPT_PATH) {
+    init.customCommandRegistry.registerEnum("cameramenu:mode", ["native", "script"]);
+  }
 
   init.customCommandRegistry.registerCommand(
     {
@@ -830,7 +867,7 @@ system.beforeEvents.startup.subscribe((init) => {
     cmdSet
   );
 
-  init.customCommandRegistry.registerCommand(
+  if (ENABLE_SCRIPT_PATH) init.customCommandRegistry.registerCommand(
     {
       name: "cameramenu:tune",
       description: "Adjust the script camera framing",
@@ -840,7 +877,7 @@ system.beforeEvents.startup.subscribe((init) => {
     cmdTune
   );
 
-  init.customCommandRegistry.registerCommand(
+  if (ENABLE_SCRIPT_PATH) init.customCommandRegistry.registerCommand(
     {
       name: "cameramenu:mode",
       description: "Use the native camera preset or the script-driven one",
@@ -871,8 +908,8 @@ system.beforeEvents.startup.subscribe((init) => {
     cmdReset
   );
 
-  // temporary, for pinning down why the script camera does nothing in some worlds
-  init.customCommandRegistry.registerCommand(
+  // for pinning down why the script camera does nothing, should the path ever come back
+  if (ENABLE_SCRIPT_PATH) init.customCommandRegistry.registerCommand(
     {
       name: "cameramenu:debug",
       description: "Report what the script camera is doing (temporary)",
