@@ -17,7 +17,7 @@ GAME_DIR = Path.home() / ".var/app/com.trench.trinity.launcher/data/mcpelauncher
 DEV_BP = GAME_DIR / "development_behavior_packs" / "camera_menu_bp"
 
 PACK_NAME = "CameraMenu"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 def fail(msg):
     print(f"  [ERROR] {msg}")
@@ -61,6 +61,16 @@ def validate():
     if exp_uuids:
         fail(f"manifest must not depend on packs (uuid): {sorted(exp_uuids)}")
     ok("dependencies: @minecraft/server 2.10.0, @minecraft/server-ui 2.2.0 (no experimental pack)")
+
+    # The "add-on flag". Since the July 2025 add-on/achievements change, this metadata is
+    # what tells the game the pack is an add-on and not a cheat world. Without it, simply
+    # applying the pack disables achievements for that world — the exact complaint this
+    # guards against, and it is invisible in game, so it must stay in the manifest.
+    meta = manifest.get("metadata", {})
+    if meta.get("product_type") != "addon":
+        fail("manifest.metadata.product_type must be 'addon' "
+             "(without it the pack disables achievements for the world)")
+    ok("metadata.product_type = 'addon' (achievements preserved)")
 
     # native JSON presets: ONE OBJECT PER FILE (1.21.80+/26.x format), namespace cm: only
     presets_dir = SRC / "cameras" / "presets"

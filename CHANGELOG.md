@@ -4,6 +4,93 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.0] - 2026-09-29
+
+### Added
+
+- **Achievements are preserved.** `manifest.json` now declares
+  `"metadata": { "product_type": "addon" }`, the add-on flag that tells the game the pack is
+  an add-on and not a cheat world, and the build validator now fails without it. The two
+  paths and their cost are documented in the README: the **script** camera needs no
+  experiment and no cheats, so it keeps achievements; the **native** camera needs
+  `experimental_creator_cameras`, and enabling an experiment disables a world's achievements
+  for good.
+- **In-game framing adjustments.** The camera menu gained an **Adjust camera (script)** entry
+  (`/cameramenu:tune` opens the same form): sliders for height, side, distance and smoothing,
+  saved per player and per world. Submitting switches the player to the script camera, because native
+  presets are files read at world load and cannot be changed at runtime.
+- **The script camera is a first-class path, not only an emergency fallback.** It can be
+  picked by hand (`/cameramenu:mode script`), it is what the in-game sliders tune, and the
+  choice is remembered per player/world — so a world without the experiment can run the
+  add-on instead of failing to a degraded mode. Verified in game on 26.50: with the
+  experiment off, the script camera moves the shoulder camera.
+- **The camera is suspended in bed, in a vehicle and while gliding**, and restored when the
+  context ends. The check runs inside a `try/catch` so the camera is never suspended on a
+  guess.
+- `/cameramenu:next` to cycle through the persistent cameras, so every preset is reachable
+  without opening the menu.
+- `/cameramenu:mode <native|script>` to force the shoulder presets through the script camera,
+  so the two paths can be compared in-game before deciding whether the add-on should drop
+  its dependency on the experimental camera presets.
+- `tune.py --radius` (shoulder distance) and `tune.py --far` (far camera distance), so the
+  non-shoulder distance presets are tunable too instead of being fixed at build time.
+
+### Changed
+
+- **`play.sh` now refuses to run without `--yes`.** Enabling the experiment disables the
+  affected worlds' achievements permanently, so the script prints the warning and exits
+  instead of doing it silently, and the README leads with "you do not need this" — the
+  script camera covers the normal case.
+- The Shift trigger is enabled again: holding Shift while standing still for 2s opens the
+  camera menu (moving restarts the timer). It was disabled while the shoulder framing was
+  being fixed up.
+- The script framing is now read from the per-player tuning when one exists, falling back to
+  the built-in offsets otherwise.
+- The menu body states how to open it with Shift.
+
+### Fixed
+
+- **Applying the pack could disable a world's achievements.** The manifest had no
+  `metadata.product_type`, so the game treated it as a cheat world. That field is now present
+  and enforced by the build.
+- **The native-preset fallback no longer reads like a failure.** It fires on every normal
+  world (no experiment), so it now states that script mode is active and that it needs
+  neither the experiment nor cheats, instead of "native preset unavailable".
+- **The in-game adjust screen is now a button board instead of sliders.** The sliders opened
+  but were unusable: the handles would not move and the form submitted at the slider's
+  minimum, which put the camera underground (height `-2`) and silently switched the
+  anti-flicker ease off (smoothing `0`). The board is one click per step with the current
+  values on screen, plus **Reset this preset** and **Original + native camera**.
+- **Adjustments could not be reset.** `/cameramenu:reset` now clears every stored adjustment
+  and leaves script mode, so a bad adjustment can never strand the camera; the board also has
+  a reset for the camera you are using.
+- **The height range could bury the camera.** The floor was `-2` (a block below the player's
+  feet); it is now `-1`, and everything is clamped on read as well as on write, so even a
+  hand-edited value cannot put the camera under the ground.
+- **The in-game tuning form never opened.** It died with
+  `TypeError: Incorrect number of arguments to function. Expected 3-4, received 5`.
+  `@minecraft/server-ui` 2.x moved the slider step and starting value into an options object
+  (`slider(label, min, max, { valueStep, defaultValue })`); the code used the 1.x positional
+  shape. Sliders now go through a helper that retries the older shapes instead of taking the
+  whole form down, and the response is read by keeping only the numbers, so a label or divider
+  can never shift the values by one.
+- **The script camera flickered.** It is re-positioned once per tick, so the picture stepped a
+  whole tick of movement at a time. Calls now pass
+  `easeOptions: { easeTime: 0.05, easeType: "linear" }`, which asks the client to interpolate
+  to each new target instead of hard-cutting to it. The **Smoothing** slider tunes it (and `0`
+  gives back the old hard-cut behaviour); if a build ever rejects the option, the session
+  quietly falls back to hard cuts instead of losing the camera.
+- **Dying lost the camera.** Only the initial spawn restored it, so a death left you on the
+  default camera until you picked one again. Joining and respawning now share one restore
+  path.
+- The fallback camera trailed the player while moving. A plain lerp leaves a steady-state
+  error of `v/0.35` blocks — about 0.62 blocks walking and 1.55 while flying in creative,
+  which is why it was worst in creative flight. The loop now feeds the player's velocity
+  forward (`1/0.35` ticks of lead) to cancel the error, and snaps when the gap passes 4
+  blocks so teleports do not send the camera flying across the map.
+
 ## [1.0.0] - 2026-09-28
 
 First release.
@@ -41,4 +128,5 @@ First release.
 - The locale fallback defaulted to Portuguese, so every player with an unrecognised locale
   got Portuguese strings. English is now the default.
 
+[1.1.0]: https://github.com/JADRT22/custom-cameras/releases/tag/v1.1.0
 [1.0.0]: https://github.com/JADRT22/custom-cameras/releases/tag/v1.0.0

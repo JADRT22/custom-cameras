@@ -9,11 +9,19 @@ import {
 import { ActionFormData } from "@minecraft/server-ui";
 
 // ============================================================
-// Custom Cameras — native camera presets (inherit_from: follow_orbit)
-// The world must have the experimental_creator_cameras experiment enabled
-// (build/toggle_experiment.py, or World Settings -> Experiments in-game).
-// If a native preset fails to load, the script falls back to a script-driven
-// free camera instead — the camera never simply stops working.
+// Custom Cameras — two camera paths, one of them achievement-safe.
+//
+//   native  the engine drives a cameras/presets/*.json preset (follow_orbit /
+//           fixed_boom). Smoothest, but the world needs the
+//           experimental_creator_cameras experiment, and ANY experiment disables
+//           that world's achievements.
+//   script  this script repositions a minecraft:free camera every tick. Needs no
+//           experiment and no cheats, so it is the path that keeps achievements.
+//
+// The add-on tries native first and drops to the script camera on its own when a
+// native preset fails — which is the normal case on a world without the experiment,
+// i.e. any world whose achievements are still worth keeping. The camera never
+// simply stops working.
 // ============================================================
 
 const HOLD_TICKS = 40; // hold shift for 2s
@@ -24,9 +32,9 @@ const CAMERA_ITEM = "minecraft:spyglass";
 const MENU_TIMEOUT_TICKS = 1200; // safety latch: a form that never resolves
 const SPAWN_DELAY_TICKS = 10; // wait after spawn before restoring the camera
 
-// Automatic triggers — disabled by design: menu and commands only for now.
-// Set to true to re-enable (shift = hold still while sneaking; spyglass = use the item).
-const ENABLE_SHIFT_TRIGGER = false;
+// Automatic triggers. Shift is the main way in: hold shift standing still and the menu
+// opens; moving cancels the timer. Spyglass stays off (it is the /cameramenu:open path).
+const ENABLE_SHIFT_TRIGGER = true;
 const ENABLE_SPYGLASS_TRIGGER = false;
 
 // key, presetId (null = default/first person), persist
@@ -51,6 +59,141 @@ const activeCam = new Map();
 const fallback = new Map();
 /** presets that failed as a native preset (per session) */
 const brokenPresets = new Set();
+/** players forcing the script-driven camera instead of the native preset */
+const forceScript = new Set();
+/** players whose camera is on hold because of the context they are in */
+const suspended = new Set();
+
+// ============================================================
+// In-game tuning (script camera)
+//
+// Native presets live in files and are read when the world loads, so they cannot be
+// changed while playing. Anything adjustable from the menu therefore drives the script
+// camera: tuning a preset also switches that player to script mode, which is exactly what
+// makes the add-on work without the experimental camera presets enabled.
+// ============================================================
+const PROP_SCRIPT = "cm:script_mode";
+const PROP_TUNE_PREFIX = "cm:tune:";
+
+/** default script framing per preset key: [side, back, up] */
+const TUNE_DEFAULTS = {
+  left: { side: -1.2, back: 2.5, up: 0.4 },
+  center: { side: 0.0, back: 2.5, up: 0.4 },
+  right: { side: 1.2, back: 2.5, up: 0.4 },
+  far: { side: 0.0, back: 7.0, up: 1.0 },
+  boom: { side: 0.9, back: 2.5, up: 0.4 },
+};
+/**
+ * What each value may be set to, and how far one click moves it: [min, max, step].
+ *
+ * `up` starts at -1 on purpose. It used to go to -2, which puts the camera a block below
+ * the player's feet — inside the ground — and a slider stuck at its minimum is exactly how
+ * that happened. `up: 0` is the vanilla shoulder reference height (eye level).
+ */
+const TUNE_LIMITS = {
+  up: [-1, 3, 0.1],
+  side: [-3, 3, 0.1],
+  back: [1, 16, 0.25],
+  ease: [0, 0.3, 0.05],
+};
+// The script camera only gets one update per tick (20 Hz), so without an ease the picture
+// jumps a whole tick of movement at a time — that is the flicker. `easeOptions` makes the
+// client interpolate to each new target, so the camera glides between the tick updates.
+// 0.05s is exactly one tick; 0 turns it off (hard cuts, for comparing).
+const DEFAULT_EASE = 0.05;
+/** set to false for the rest of the session if this build rejects the ease option */
+let easeSupported = true;
+
+function finite(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** keep a value inside [min, max] of a TUNE_LIMITS entry */
+function clampToLimits(value, limits) {
+  return Math.min(limits[1], Math.max(limits[0], value));
+}
+
+// Clearing a tuning = storing an empty string. readTune only accepts strings that parse as
+// JSON, so "" reads back as "no tuning" and the preset returns to its built-in framing.
+// (Deleting the property outright would mean relying on setDynamicProperty(key, undefined).)
+function clearTune(player, presetKey) {
+  try {
+    player.setDynamicProperty(PROP_TUNE_PREFIX + presetKey, "");
+  } catch (e) {
+    console.warn(`[CameraMenu] could not clear the tuning: ${e}`);
+  }
+}
+
+function clearAllTune(player) {
+  for (const key of Object.keys(TUNE_DEFAULTS)) clearTune(player, key);
+}
+
+function readTune(player, presetKey) {
+  const defaults = TUNE_DEFAULTS[presetKey];
+  if (!defaults) return null;
+  try {
+    const raw = player.getDynamicProperty(PROP_TUNE_PREFIX + presetKey);
+    if (typeof raw === "string") {
+      const parsed = JSON.parse(raw);
+      return {
+        side: clampToLimits(finite(parsed.side, defaults.side), TUNE_LIMITS.side),
+        back: clampToLimits(finite(parsed.back, defaults.back), TUNE_LIMITS.back),
+        up: clampToLimits(finite(parsed.up, defaults.up), TUNE_LIMITS.up),
+        ease: clampToLimits(finite(parsed.ease, DEFAULT_EASE), TUNE_LIMITS.ease),
+      };
+    }
+  } catch { /* fall back to the built-in framing */ }
+  return { ...defaults, ease: DEFAULT_EASE };
+}
+
+function writeTune(player, presetKey, values) {
+  try {
+    player.setDynamicProperty(PROP_TUNE_PREFIX + presetKey, JSON.stringify(values));
+  } catch (e) {
+    console.warn(`[CameraMenu] could not save the tuning: ${e}`);
+  }
+}
+
+/**
+ * Move the script camera. `easeOptions` is what keeps it from flickering: a preset camera is
+ * only re-positioned once per tick, so the client is asked to interpolate to each new target
+ * instead of hard-cutting to it. If this build rejects the option (wrong name/shape), the
+ * flag is cleared for the session and every later call goes back to a plain hard cut — the
+ * camera keeps working, it just flickers like it used to.
+ */
+function setScriptCamera(player, location, facingLocation, easeTime) {
+  const camera = player.camera;
+  if (easeSupported && easeTime > 0) {
+    try {
+      camera.setCamera("minecraft:free", {
+        location,
+        facingLocation,
+        easeOptions: { easeTime, easeType: "linear" },
+      });
+      return;
+    } catch (e) {
+      easeSupported = false;
+      console.warn(`[CameraMenu] camera ease unavailable, using hard cuts: ${e}`);
+    }
+  }
+  camera.setCamera("minecraft:free", { location, facingLocation });
+}
+
+function setScriptMode(player, on) {
+  if (on) forceScript.add(player.id);
+  else forceScript.delete(player.id);
+  try {
+    player.setDynamicProperty(PROP_SCRIPT, on === true);
+  } catch { /* ignore */ }
+}
+
+function loadScriptMode(player) {
+  try {
+    if (player.getDynamicProperty(PROP_SCRIPT) === true) forceScript.add(player.id);
+    else forceScript.delete(player.id);
+  } catch { /* ignore */ }
+}
 
 // ==================== Language ====================
 // English is the default for every locale we do not explicitly support.
@@ -81,7 +224,7 @@ function applyPreset(player, preset, withFade = true) {
   try {
     if (preset.id === null) {
       player.camera.clear();
-    } else if (preset.fb && brokenPresets.has(preset.id)) {
+    } else if (preset.fb && (brokenPresets.has(preset.id) || forceScript.has(player.id))) {
       // native preset unavailable in this world: use the fallback (free camera per tick)
       applyFallback(player, preset);
     } else if (preset.id === "minecraft:free") {
@@ -112,10 +255,12 @@ function applyPreset(player, preset, withFade = true) {
     if (preset.fb) {
       // marca como quebrado e ativa o plano B na hora
       brokenPresets.add(preset.id);
+      // This is the expected path on a world without the experimental camera presets —
+      // and the one that keeps that world's achievements. Inform, do not alarm.
       player.sendMessage(
         wantsPortuguese(player)
-          ? "§e[Câmeras] preset nativo indisponível — usando modo alternativo."
-          : "§e[Cameras] native preset unavailable — using fallback mode."
+          ? "§7[Câmeras] modo script ativo — não precisa do experimento nem de cheats (conquistas preservadas)."
+          : "§7[Cameras] script mode active — no experiment and no cheats needed (achievements stay on)."
       );
       applyFallback(player, preset);
       activeCam.set(player.id, preset);
@@ -162,33 +307,57 @@ function camTarget(player, off) {
 
 function applyFallback(player, preset) {
   try {
-    const target = camTarget(player, preset.fb);
-    fallback.set(player.id, { preset, cur: target });
-    player.camera.setCamera("minecraft:free", {
-      location: target,
-      facingLocation: player.getHeadLocation(),
-    });
+    const tuned = readTune(player, preset.key);
+    const off = tuned ? [tuned.side, tuned.back, tuned.up] : preset.fb;
+    const ease = tuned ? tuned.ease : DEFAULT_EASE;
+    const target = camTarget(player, off);
+    const head = player.getHeadLocation();
+    fallback.set(player.id, { preset, off, ease, cur: target, head });
+    setScriptCamera(player, target, head, ease);
   } catch (e) {
     console.warn(`[CameraMenu] fallback failed: ${e}`);
   }
 }
 
-// fallback loop (only runs for players currently in fallback mode)
+// Fallback loop (only runs for players currently in fallback mode).
+//
+// A plain lerp trails the player by v/LERP blocks: ~0.62 while walking (0.216 blocks per
+// tick / 0.35) and ~1.55 while flying in creative — the faster you move, the worse it
+// looks. Feeding the player's velocity forward by 1/LERP ticks cancels that steady-state
+// error, and a snap threshold keeps teleports from flying the camera across the map.
+const LERP = 0.35;
+const LEAD_TICKS = 1 / LERP;
+const SNAP_DISTANCE = 4;
+
 system.runInterval(() => {
   for (const player of world.getAllPlayers()) {
     const state = fallback.get(player.id);
     if (!state) continue;
     try {
       const head = player.getHeadLocation();
-      const target = camTarget(player, state.preset.fb);
+      const prev = state.head;
+      const target = camTarget(player, state.off);
+      const vx = prev ? head.x - prev.x : 0;
+      const vy = prev ? head.y - prev.y : 0;
+      const vz = prev ? head.z - prev.z : 0;
+      state.head = head;
+      const aim = {
+        x: target.x + vx * LEAD_TICKS,
+        y: target.y + vy * LEAD_TICKS,
+        z: target.z + vz * LEAD_TICKS,
+      };
       const c = state.cur;
-      c.x += (target.x - c.x) * 0.35;
-      c.y += (target.y - c.y) * 0.35;
-      c.z += (target.z - c.z) * 0.35;
-      player.camera.setCamera("minecraft:free", {
-        location: { x: c.x, y: c.y, z: c.z },
-        facingLocation: { x: head.x, y: head.y, z: head.z },
-      });
+      const k =
+        Math.hypot(aim.x - c.x, aim.y - c.y, aim.z - c.z) > SNAP_DISTANCE ? 1 : LERP;
+      c.x += (aim.x - c.x) * k;
+      c.y += (aim.y - c.y) * k;
+      c.z += (aim.z - c.z) * k;
+      setScriptCamera(
+        player,
+        { x: c.x, y: c.y, z: c.z },
+        { x: head.x, y: head.y, z: head.z },
+        state.ease
+      );
     } catch { /* player unloaded */ }
   }
 });
@@ -203,11 +372,23 @@ async function openMenu(player) {
 
     const form = new ActionFormData()
       .title(pt ? "Câmeras" : "Cameras")
-      .body(pt ? `Câmera atual: ${label(player, active)}` : `Current camera: ${label(player, active)}`);
+      .body(
+        (pt ? `Câmera atual: ${label(player, active)}` : `Current camera: ${label(player, active)}`) +
+          (pt
+            ? "\n\nSegure Shift parado para abrir este menu."
+            : "\n\nHold Shift while standing still to open this menu.")
+      );
     for (const p of PRESETS) form.button(label(player, p));
+    form.button(pt ? "Ajustar camera (script)" : "Adjust camera (script)");
 
     const res = await form.show(player);
     if (res.canceled || res.selection === undefined) return;
+    if (res.selection === PRESETS.length) {
+      // this menu holds the latch: release it before opening the next form
+      menuOpen.delete(player.id);
+      await openTune(player);
+      return;
+    }
     const chosen = PRESETS[res.selection];
     if (!chosen) return;
 
@@ -217,6 +398,98 @@ async function openMenu(player) {
     );
   } catch (e) {
     console.warn(`[CameraMenu] erro no menu: ${e}`);
+  } finally {
+    menuOpen.delete(player.id);
+  }
+}
+
+// ==================== Adjust board (A1) ====================
+//
+// No sliders here on purpose. The modal sliders in this build opened, but their handles
+// would not move and they submitted at their minimum — height -2 dropped the camera into the
+// ground and smoothing 0 switched the anti-flicker ease off, which is exactly the "stuck on
+// negative numbers" report. Buttons on an ActionFormData are the widget this client proves
+// it can handle (the camera menu is built from the same one), so adjusting is one click per
+// step, with the current values always on screen and a real reset.
+async function openTune(player) {
+  if (menuOpen.has(player.id)) return;
+  menuOpen.set(player.id, system.currentTick);
+  try {
+    const pt = wantsPortuguese(player);
+    const active = activeCam.get(player.id);
+    const key = active && TUNE_DEFAULTS[active.key] ? active.key : "right";
+    const preset = PRESETS.find((p) => p.key === key);
+
+    const actions = [
+      { field: "up", delta: 1, pt: "Altura +" , en: "Height +" },
+      { field: "up", delta: -1, pt: "Altura -", en: "Height -" },
+      { field: "back", delta: 1, pt: "Distancia +", en: "Distance +" },
+      { field: "back", delta: -1, pt: "Distancia -", en: "Distance -" },
+      { field: "side", delta: 1, pt: "Lateral +", en: "Side +" },
+      { field: "side", delta: -1, pt: "Lateral -", en: "Side -" },
+      { field: "ease", delta: 1, pt: "Suavidade +", en: "Smoothing +" },
+      { field: "ease", delta: -1, pt: "Suavidade -", en: "Smoothing -" },
+      { field: "reset", delta: 0, pt: "Resetar este preset", en: "Reset this preset" },
+      { field: "original", delta: 0, pt: "Original + camera nativa", en: "Original + native camera" },
+      { field: "menu", delta: 0, pt: "Outras cameras", en: "Other cameras" },
+      { field: "close", delta: 0, pt: "Pronto", en: "Done" },
+    ];
+
+    for (;;) {
+      const values = readTune(player, key);
+      const form = new ActionFormData()
+        .title(pt ? `Ajustar: ${label(player, preset)}` : `Adjust: ${label(player, preset)}`)
+        .body(
+          pt
+            ? `Altura ${values.up}   Lateral ${values.side}\nDistancia ${values.back}   Suavidade ${values.ease}\n\nCada toque muda um passo. Suavidade 0 = cortes secos (tremido).`
+            : `Height ${values.up}   Side ${values.side}\nDistance ${values.back}   Smoothing ${values.ease}\n\nEach click moves one step. Smoothing 0 = hard cuts (shaky).`
+        );
+      for (const action of actions) form.button(pt ? action.pt : action.en);
+
+      const res = await form.show(player);
+      if (res.canceled || res.selection === undefined) break;
+      const action = actions[res.selection];
+      if (!action || action.field === "close") break;
+
+      if (action.field === "menu") {
+        menuOpen.delete(player.id);
+        await openMenu(player);
+        return;
+      }
+      if (action.field === "reset") {
+        clearTune(player, key);
+      } else if (action.field === "original") {
+        clearAllTune(player);
+        setScriptMode(player, false);
+      } else {
+        const step = TUNE_LIMITS[action.field][2];
+        // any framing change is only visible on the script camera
+        setScriptMode(player, true);
+        writeTune(player, key, {
+          side:
+            action.field === "side"
+              ? clampToLimits(values.side + action.delta * step, TUNE_LIMITS.side)
+              : values.side,
+          back:
+            action.field === "back"
+              ? clampToLimits(values.back + action.delta * step, TUNE_LIMITS.back)
+              : values.back,
+          up:
+            action.field === "up"
+              ? clampToLimits(values.up + action.delta * step, TUNE_LIMITS.up)
+              : values.up,
+          ease:
+            action.field === "ease"
+              ? clampToLimits(values.ease + action.delta * step, TUNE_LIMITS.ease)
+              : values.ease,
+        });
+      }
+
+      // every branch ends with the camera re-applied, so the change is visible immediately
+      applyPreset(player, preset, false);
+    }
+  } catch (e) {
+    console.warn(`[CameraMenu] adjust board failed: ${e}`);
   } finally {
     menuOpen.delete(player.id);
   }
@@ -270,14 +543,56 @@ if (ENABLE_SPYGLASS_TRIGGER) world.afterEvents.itemUse.subscribe(({ source, item
   }
 });
 
+// ==================== Context suspend (A4) ====================
+// In a bed, riding a boat/minecart/mob or gliding, a preset camera is either pointless or
+// in the way, so it is put on hold and restored when the context ends. The check is wrapped
+// in try/catch on purpose: if a property is ever unavailable the camera is left alone
+// rather than suspended on a guess.
+const SUSPEND_POLL = 10; // 0.5s
+
+function suspendReason(player) {
+  try {
+    if (player.isSleeping) return "sleeping";
+    const riding = player.getComponent("minecraft:riding");
+    if (riding && riding.entityRidingOn) return "riding";
+    if (player.isGliding) return "gliding";
+  } catch { /* never suspend on a guess */ }
+  return null;
+}
+
+system.runInterval(() => {
+  for (const player of world.getAllPlayers()) {
+    try {
+      const reason = suspendReason(player);
+      const preset = activeCam.get(player.id);
+      if (reason) {
+        if (!suspended.has(player.id)) {
+          suspended.add(player.id);
+          fallback.delete(player.id);
+          player.camera.clear();
+        }
+      } else if (suspended.has(player.id)) {
+        suspended.delete(player.id);
+        if (preset) applyPreset(player, preset, false);
+      }
+    } catch { /* ignore */ }
+  }
+}, SUSPEND_POLL);
+
 // ==================== Lifecycle ====================
 world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
-  if (!initialSpawn) return;
+  // Joining and respawning take the same path: dying takes the camera away with it, so the
+  // preset is reapplied on the way back instead of being silently lost.
+  activeCam.delete(player.id);
+  fallback.delete(player.id);
+  suspended.delete(player.id);
+  loadScriptMode(player);
   restoreLast(player);
+  if (!initialSpawn) return;
   player.sendMessage(
     wantsPortuguese(player)
-      ? "§7[Câmeras] §fAtivo! Menu: §e/cameramenu:open§f | Troca direta: §e/cameramenu:set right§f | Destrava: §e/cameramenu:reset"
-      : "§7[Cameras] §fRunning! Menu: §e/cameramenu:open§f | Set: §e/cameramenu:set right§f | Unlock: §e/cameramenu:reset"
+      ? "§7[Câmeras] §fAtivo! §eSegure Shift parado§f abre o menu (ou §e/cameramenu:open§f) | §e/cameramenu:next§f cicla | §e/cameramenu:mode script§f testa a câmera por script | §e/cameramenu:reset§f destrava"
+      : "§7[Cameras] §fRunning! §eHold Shift standing still§f opens the menu (or §e/cameramenu:open§f) | §e/cameramenu:next§f cycles | §e/cameramenu:mode script§f tests the script camera | §e/cameramenu:reset§f unlocks"
   );
 });
 
@@ -286,6 +601,8 @@ world.afterEvents.playerLeave.subscribe(({ playerId }) => {
   menuOpen.delete(playerId);
   activeCam.delete(playerId);
   fallback.delete(playerId);
+  suspended.delete(playerId);
+  forceScript.delete(playerId);
 });
 
 // ==================== Commands ====================
@@ -326,10 +643,14 @@ function cmdReset(origin) {
       activeCam.delete(player.id);
       fallback.delete(player.id);
       player.setDynamicProperty(PROP_LAST, "default");
+      // the escape hatch: a bad adjustment must never be able to strand the camera, so
+      // this also clears every tuning and drops script mode
+      clearAllTune(player);
+      setScriptMode(player, false);
       player.sendMessage(
         wantsPortuguese(player)
-          ? "§aCâmera resetada para o padrão."
-          : "§aCamera reset to default."
+          ? "§aCâmera resetada e ajustes limpos."
+          : "§aCamera reset and adjustments cleared."
       );
     } catch (e) {
       player.sendMessage(
@@ -340,8 +661,55 @@ function cmdReset(origin) {
   return { status: CustomCommandStatus.Success };
 }
 
+function cmdTune(origin) {
+  const player = asPlayer(origin);
+  if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
+  system.run(() => openTune(player));
+  return { status: CustomCommandStatus.Success };
+}
+
+function cmdMode(origin, mode) {
+  const player = asPlayer(origin);
+  if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
+  setScriptMode(player, mode === "script");
+  system.run(() => {
+    const current = activeCam.get(player.id);
+    if (current) applyPreset(player, current);
+  });
+  const pt = wantsPortuguese(player);
+  return {
+    status: CustomCommandStatus.Success,
+    message:
+      mode === "script"
+        ? pt
+          ? "§aCâmera por script (não precisa do experimento)."
+          : "§aScript-driven camera (no experiment needed)."
+        : pt
+          ? "§aCâmera nativa (precisa do experimento)."
+          : "§aNative camera (needs the experiment).",
+  };
+}
+
+function cmdNext(origin) {
+  const player = asPlayer(origin);
+  if (!player) return { status: CustomCommandStatus.Failure, message: "Players only." };
+  // cycle the persistent cameras only, so the one-shot cinematic is never in the way
+  const cycle = PRESETS.filter((p) => p.persist);
+  const current = activeCam.get(player.id) ?? PRESETS[0];
+  const index = cycle.findIndex((p) => p.key === current.key);
+  const preset = cycle[(index + 1) % cycle.length] ?? cycle[0];
+  system.run(() => applyPreset(player, preset));
+  return {
+    status: CustomCommandStatus.Success,
+    message: wantsPortuguese(player)
+      ? `§aCâmera: ${label(player, preset)}`
+      : `§aCamera: ${label(player, preset)}`,
+  };
+}
+
 system.beforeEvents.startup.subscribe((init) => {
   init.customCommandRegistry.registerEnum("cameramenu:preset", PRESETS.map((p) => p.key));
+  init.customCommandRegistry.registerEnum("cameramenu:mode", ["native", "script"]);
 
   init.customCommandRegistry.registerCommand(
     {
@@ -362,6 +730,37 @@ system.beforeEvents.startup.subscribe((init) => {
       mandatoryParameters: [{ type: CustomCommandParamType.Enum, name: "cameramenu:preset" }],
     },
     cmdSet
+  );
+
+  init.customCommandRegistry.registerCommand(
+    {
+      name: "cameramenu:tune",
+      description: "Adjust the script camera framing",
+      permissionLevel: CommandPermissionLevel.Any,
+      cheatsRequired: false,
+    },
+    cmdTune
+  );
+
+  init.customCommandRegistry.registerCommand(
+    {
+      name: "cameramenu:mode",
+      description: "Use the native camera preset or the script-driven one",
+      permissionLevel: CommandPermissionLevel.Any,
+      cheatsRequired: false,
+      mandatoryParameters: [{ type: CustomCommandParamType.Enum, name: "cameramenu:mode" }],
+    },
+    cmdMode
+  );
+
+  init.customCommandRegistry.registerCommand(
+    {
+      name: "cameramenu:next",
+      description: "Cycle to the next custom camera",
+      permissionLevel: CommandPermissionLevel.Any,
+      cheatsRequired: false,
+    },
+    cmdNext
   );
 
   init.customCommandRegistry.registerCommand(

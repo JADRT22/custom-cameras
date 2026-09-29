@@ -1,18 +1,50 @@
 #!/usr/bin/env bash
 # Enable the camera experiment in the worlds and launch Minecraft (Trinity).
 #
-# Why this exists: the game DISCARDS the experiment flag when it saves the world,
-# so flipping it once in level.dat is not enough. This wrapper flips it before launch.
+# !!! READ THIS FIRST !!!
+# Turning an experiment on disables achievements for that world PERMANENTLY — the game
+# flags it with experiments_ever_used and never takes that back, even if the experiment
+# is later switched off. The native camera path needs this experiment; the script camera
+# path does not. So on a world whose achievements matter, do NOT run this: just play, and
+# the add-on falls back to the script camera by itself.
+#
+# Why this exists at all: for a world where achievements are already gone (or never
+# mattered), the native camera is smoother than the script one, and the game DISCARDS the
+# experiment flag when it saves the world — so flipping it once in level.dat is not
+# enough. This wrapper flips it before every launch.
 #
 # Usage:
-#   ./play.sh                 # enable it in every world and open the game
-#   ./play.sh "teste addons"  # only in the world with that name
+#   ./play.sh                     # refuses: enabling the experiment is irreversible
+#   ./play.sh --yes                # enable it in every world and open the game
+#   ./play.sh "teste addons" --yes # only in the world with that name
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORLDS="$HOME/.var/app/com.trench.trinity.launcher/data/mcpelauncher/games/com.mojang/minecraftWorlds"
-FILTER="${1:-}"
 EXPERIMENT="experimental_creator_cameras"
+
+# --yes (or CAMERA_MENU_I_KNOW=1) is required: see the warning above.
+YES=0
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --yes) YES=1 ;;
+        *) ARGS+=("$arg") ;;
+    esac
+done
+FILTER="${ARGS[0]:-}"
+
+if [ "$YES" -ne 1 ] && [ "${CAMERA_MENU_I_KNOW:-0}" != "1" ]; then
+    echo "WARNING: this enables the '$EXPERIMENT' experiment, which disables"
+    echo "         achievements for the affected worlds PERMANENTLY."
+    echo
+    echo "         You do not need it. The add-on works without it by using the"
+    echo "         script camera (no experiment, no cheats, achievements kept)."
+    echo "         Only enable it on a world whose achievements are already lost."
+    echo
+    echo "         Re-run with --yes to confirm, or just play normally."
+    exit 1
+fi
 
 # Read the real process name (comm, truncated to 15 chars) from /proc.
 # This avoids the `pgrep -f` false positive: that pattern also matches the

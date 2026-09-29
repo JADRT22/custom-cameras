@@ -4,21 +4,21 @@
     "name": "pack.name",
     "description": "pack.description",
     "uuid": "d2fba87f-2318-480e-bc38-de5f21d1ab8b",
-    "version": [1, 0, 0],
+    "version": [1, 1, 0],
     "min_engine_version": [1, 26, 50]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "ce4b75aa-92e5-4d77-a6fa-372a3dbaf63c",
-      "version": [1, 0, 0]
+      "version": [1, 1, 0]
     },
     {
       "type": "script",
       "language": "javascript",
       "uuid": "26f6211e-008d-4759-bb0e-56ee274effe0",
       "entry": "scripts/main.js",
-      "version": [1, 0, 0]
+      "version": [1, 1, 0]
     }
   ],
   "dependencies": [
@@ -30,5 +30,8 @@
       "module_name": "@minecraft/server-ui",
       "version": "2.2.0"
     }
-  ]
+  ],
+  "metadata": {
+    "product_type": "addon"
+  }
 }

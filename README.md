@@ -5,6 +5,10 @@
 Camera presets for **Minecraft Bedrock 26.50** — switched from an in-game menu or slash
 commands, on any world, **without enabling cheats**.
 
+The menu opens by **holding Shift while standing still** (2s), from `/cameramenu:open`, or
+by `/cameramenu:next` to cycle. All seven cameras are first-class: nothing here is
+shoulder-only, the shoulder cameras are just the most usable ones.
+
 Built and maintained entirely from the terminal: no GUI on the desktop, the menu lives
 inside the game.
 
@@ -26,7 +30,14 @@ All of these work **without cheats** (`cheatsRequired: false`):
 
 - `/cameramenu:open` — open the camera menu
 - `/cameramenu:set <default|left|center|right|boom|far|low>` — switch directly
+- `/cameramenu:next` — cycle through the persistent cameras
+- `/cameramenu:tune` — open the framing adjustment board (same as the menu's **Adjust camera** button)
+- `/cameramenu:mode <native|script>` — A/B the two camera paths (see below)
 - `/cameramenu:reset` — back to default (the escape hatch)
+
+The menu also opens on its own: hold **Shift while standing still** for 2 seconds, and move
+to cancel the timer. (Holding shift is sneak, so Actions & Stuff's sneak animations will
+play while you do it — that is the pack doing its job, not this one.)
 
 The last camera you pick is reapplied when you re-enter the world. Switching does a quick
 fade. The mod does **not** draw a crosshair: when the camera detaches from the player the
@@ -34,27 +45,65 @@ vanilla crosshair disappears, and that is expected.
 
 ## Requirements
 
-> **This add-on needs the `experimental_creator_cameras` experiment enabled on the world.**
-> Shoulder and far cameras inherit from `minecraft:follow_orbit` and `minecraft:fixed_boom`,
-> which are experimental camera presets.
+Nothing to turn on: **no cheats, no experiment.** Applying the pack is enough, and the
+world keeps its achievements.
 
-Two consequences worth knowing up front:
+There are two ways the camera can be moved, and the add-on picks one per player.
+`/cameramenu:mode native|script` switches by hand, and the choice is remembered per
+player/world.
 
-1. **Installing it as a plain `.mcaddon` is not enough.** If the experiment is off, the
-   native presets fail and the add-on silently drops to a script-driven free camera
-   (works, but it is smoother to have the native presets).
-2. **The game clears the experiment flag when it saves the world.** So this is not a
-   one-time toggle — it has to be re-enabled for each session. That is what `./play.sh`
-   in this repo automates.
+| | What runs | Experiment | Achievements |
+|---|---|---|---|
+| **native** | The engine drives a native `follow_orbit` / `fixed_boom` preset from `cameras/presets/`. Smoothest, because the engine moves the camera and not the script. | `experimental_creator_cameras` **on** | **lost** — any experiment disables them |
+| **script** | The add-on repositions a `minecraft:free` camera itself, every tick, from the preset plus your adjustments. This is the one the adjustment board tunes. | not needed\* | **kept** |
+
+The add-on tries native first and drops to the script camera by itself when a native preset
+fails, so a world without the experiment simply works. That is the normal, achievement-safe
+case. Forcing script always works; forcing native on a world without the experiment does
+nothing.
+
+### Achievements
+
+Achievements are disabled by the **world**, not by this add-on, and by exactly two things:
+
+- **Cheats** (`Allow Cheats: on`). The add-on never needs them: every command is registered
+  with `cheatsRequired: false` and `permissionLevel: Any`, so `/cameramenu:*` works on a
+  clean world.
+- **Any experiment.** Turning one on disables achievements for that world, and it is not
+  something you get back. The native camera path needs `experimental_creator_cameras`, so
+  **do not enable it — and do not run `./play.sh` — on a world whose achievements you care
+  about.** Stay in script mode (what you get by default when the experiment is off) and
+  nothing is lost.
+
+On top of that the pack carries the add-on flag, `"metadata": { "product_type": "addon" }`,
+in `manifest.json`. Since July 2025 that is what tells the game the pack is an add-on rather
+than a cheat world — **without it, merely applying the pack disables achievements**, which is
+invisible in game and the usual reason people lose them. The build refuses to package
+without it.
+
+> Achievements also require **Survival mode** with cheats off, so a world you play in
+> creative has them disabled no matter what any pack does.
+
+The game clears the experiment flag every time it saves a world, so keeping it on is a
+per-session toggle — that is what `./play.sh` automates. That script is a convenience for
+testing the native path, **not part of a normal install**.
+
+> \* **Verified in 26.50:** with the experiment off, `/cameramenu:mode script` does move the
+> shoulder camera, and a world with no cheats accepts every `/cameramenu:*` command. The
+> script camera is a little rougher than the native one — it is only re-positioned once per
+> tick, so the picture steps 20 times a second — and the **Smoothing** steps on the adjust
+> board exist to tame exactly that.
 
 ## Installation
 
 ### From a release `.mcaddon`
 
-1. Grab `CameraMenu-v1.0.0.mcaddon` from the releases / `dist/`.
+1. Grab `CameraMenu-v1.1.0.mcaddon` from the releases / `dist/`.
 2. Double-click it (or open it with Minecraft) to import.
 3. Enable it on the world under **Behavior Packs**.
-4. Enable **Experimental Creator Camera Features** in the world's experiment settings.
+4. That is all — leave cheats off and the experiments untouched; the add-on runs on the
+   script camera. Only turn on **Experimental Creator Camera Features** if you want the
+   smoother native camera and do not mind losing that world's achievements.
 
 ### Development install (what this repo does)
 
@@ -75,10 +124,11 @@ src/camera_menu_bp/        the behavior pack itself (this is what ships)
   scripts/main.js          menu, commands, fallback camera, persistence
   texts/*.lang             pack name / description (en_US, pt_BR)
 build.py                   validate + package + install
+build/brx.py               list the entries of a .brarchive (camera preset tables)
 build/toggle_experiment.py enable/disable an experiment in a world's level.dat
 build/nbt_experiments.py   read the 'experiments' compound back out of level.dat
 build/make_icon.py         generate pack_icon.png with no dependencies
-play.sh                    enable the experiment, then launch the game
+play.sh                    enable the experiment (needs --yes), then launch the game
 tune.py                    calibrate shoulder camera framing + reinstall
 ans_toggle.sh              A/B testing helper for a global resource pack
 ```
@@ -94,15 +144,21 @@ python3 build.py --icon     # (re)generate pack_icon.png
 The build refuses to package unless the manifest, UUIDs, modules, dependencies, every
 camera preset and both `.lang` files pass validation.
 
-### Getting the experiment to stay on
+### Getting the experiment to stay on (only for worlds that no longer care)
 
-`play.sh` enables the experiment in the worlds and then launches the game. It refuses to
-run while the game has a world loaded, because the game would overwrite `level.dat` on
-save and lose the flag:
+**You do not need this.** It is for a throwaway world where you want the smoother native
+camera and achievements are already gone. On any other world, skip it and let the add-on use
+the script camera.
+
+`play.sh` enables the experiment in the worlds and then launches the game. Because that
+disables their achievements permanently, it refuses to do anything without `--yes`. It also
+refuses to run while the game has a world loaded, since the game would overwrite `level.dat`
+on save and lose the flag:
 
 ```bash
-./play.sh                  # every world
-./play.sh "My World"       # only that world
+./play.sh                      # prints the warning and does nothing
+./play.sh --yes                # every world (irreversible)
+./play.sh "My World" --yes     # only that world (irreversible)
 ```
 
 It detects a running game by reading `/proc/<pid>/comm`, so an open launcher does not
@@ -121,15 +177,49 @@ Creator Camera Features** (when the game itself writes it, it sticks).
 
 </details>
 
-## Tuning the shoulder cameras
+## Tuning the cameras
 
-Camera height is a matter of taste, so there is a terminal shortcut for it:
+### In-game (recommended)
+
+The last entry in the camera menu is **Adjust camera**, and `/cameramenu:tune` opens the same
+board. It is a list of buttons, one click per step, with the current values in the header:
+
+| | |
+|---|---|
+| Height `+` / `-` | 0.10 at a time (`0` = vanilla shoulder height) |
+| Distance `+` / `-` | 0.25 at a time |
+| Side `+` / `-` | 0.10 at a time |
+| Smoothing `+` / `-` | 0.05 at a time (`0` = hard cuts, i.e. shaky) |
+| **Reset this preset** | back to the built-in framing for the camera you are using |
+| **Original + native camera** | clears every adjustment *and* leaves script mode |
+
+Values are saved per player and per world and applied immediately.
+
+> **Why buttons and not sliders?** They were tried first and they are unusable in this client:
+> the handles would not move, and the form submitted at the slider's minimum — height `-2`
+> dropped the camera below the player's feet, inside the ground, and smoothing `0` silently
+> switched the anti-flicker ease off. On top of that `@minecraft/server-ui` 2.x changed the
+> signature to `slider(label, min, max, { valueStep, defaultValue })`, so the 1.x positional
+> form throws `Incorrect number of arguments to function. Expected 3-4, received 5` and takes
+> the whole form down. Buttons are the widget this client demonstrably handles — the camera
+> menu is built from the same one.
+
+Adjusting switches you to the script camera, because these values can only drive it: a native
+preset is a file the game read when the world loaded and it cannot be changed while you play.
+That is the whole reason the script path exists.
+
+### From the terminal
+
+The terminal shortcut rewrites the *native* preset files instead, so it only changes what you
+see when the experiment is on:
 
 ```bash
 python3 tune.py            # show the current values
 python3 tune.py --y 0.4    # raise the shoulder camera
 python3 tune.py --y -0.2   # lower it
 python3 tune.py --x 1.5    # push the player further to the side
+python3 tune.py --radius 1.5  # move the shoulder cameras closer (smaller = tighter)
+python3 tune.py --far 12   # distance of the far camera
 ```
 
 `tune.py` rewrites the presets and reinstalls. Re-enter the world for the game to reload
@@ -160,24 +250,80 @@ They are enforced by the build validator so they cannot regress.
 - **Valid preset names in 26.50**: `first_person`, `third_person`, `third_person_front`,
   `free`, `fixed_boom`, `follow_orbit` (extracted from the vanilla `presets.brarchive` and
   the client binary). There is no `third_person_boom`.
-- **Automatic fallback.** If a native preset fails to apply, the script warns in chat and
-  switches that player to a free camera repositioned every tick, so the camera never
-  simply stops working.
+- **The add-on flag is load-bearing.** `manifest.json` declares
+  `"metadata": { "product_type": "addon" }`, and the validator fails the build without it.
+  Since July 2025 this is what stops the game treating the pack as a cheat world and
+  disabling achievements the moment it is applied.
+- **Automatic fallback.** If a native preset fails to apply, the script says so in chat and
+  switches that player to a free camera repositioned every tick, so the camera never simply
+  stops working. On a world without the experiment this is the normal path — and the one
+  that keeps that world's achievements.
 - `scripts/main.js` uses `@minecraft/server 2.10.0` and `@minecraft/server-ui 2.2.0`. The
   menu uses literal strings instead of `RawMessage` because server-ui 2.x does not resolve
   nested messages. There is a safety latch that releases a player if a form never resolves.
+- **The adjustment board uses buttons, not sliders.** Besides the 2.x signature change
+  (`slider(label, min, max, options)` — the 1.x positional shape throws
+  `Incorrect number of arguments to function. Expected 3-4, received 5`), the sliders
+  themselves misbehaved in this client: handles that would not move and values submitted at
+  the minimum. Buttons avoid the whole class of problem, and each click re-applies the camera
+  so the effect is visible immediately.
 - **English is the default locale.** The script only switches to Portuguese for `pt*`
   locales; any unrecognised locale falls back to English.
-- Automatic triggers (holding sneak, or using a spyglass) exist but are **disabled** via
-  `ENABLE_SHIFT_TRIGGER` / `ENABLE_SPYGLASS_TRIGGER` at the top of the script. The menu and
-  the commands are the supported path.
+- Automatic triggers: **Shift is enabled** — hold it while standing still for 2s and the
+  menu opens (moving restarts the timer). The spyglass trigger (`ENABLE_SPYGLASS_TRIGGER`)
+  is off; `/cameramenu:open` replaces it.
+- **The script camera is smoothed through `easeOptions`.** Re-positioning a camera every tick
+  makes the picture step a whole tick of movement at a time, which reads as flicker (worst in
+  the script path, and worse the faster you move). Passing
+  `easeOptions: { easeTime: 0.05, easeType: "linear" }` makes the client interpolate to each
+  new target instead of hard-cutting to it. If a build ever rejects that option, the flag is
+  cleared for the session and every later call falls back to a plain hard cut, so the camera
+  keeps working either way. `Smoothing` of `0` is exactly that hard-cut behaviour, for A/B.
+- **The fallback camera has velocity feed-forward.** A plain `c + (t-c)*0.35` lerp trails the
+  player by `v/0.35` blocks — about 0.62 blocks walking and 1.55 while flying in creative,
+  which is the "drag" people notice. The loop aims `1/0.35` ticks ahead of the player to
+  cancel that steady-state error, and snaps instead of lerping when the gap exceeds 4 blocks
+  (teleports).
 - The Low Cinematic camera is intentionally temporary: it does not persist across sessions.
+- **The camera is put on hold in a few contexts** (sleeping, riding a boat/minecart/mob, or
+  gliding) and restored when you leave them. The check runs every 0.5s inside a `try/catch`,
+  so if a property is ever unavailable the camera is left alone rather than suspended on a
+  guess.
+- **Dying no longer loses your camera.** Joining and respawning share one restore path, so the
+  camera you had before dying is reapplied a few ticks after you are back.
+- **Adjustments are per player and per world**, stored in dynamic properties
+  (`cm:tune:<preset>`, `cm:script_mode`), next to the `cm:preset` used for the last camera.
 
 ## Troubleshooting
 
-**The camera falls back to a jittery mode.** The experiment is off for that world. Run
-`./play.sh "<world>"` — the game clears the flag every time it saves, so this is per
-session, not a one-time fix.
+**Do I want the native camera or the script one?** `/cameramenu:mode script` forces the
+shoulder presets to run through the script loop instead of the native preset, so you can
+compare them in the same world without touching the experiment. The native one is smoother
+because the engine drives it; the script one needs no experiment at all. Switching back is
+`/cameramenu:mode native`.
+
+**The camera is a bit choppier than I expected.** That is the script camera running because
+the experiment is off — normal, and nothing is broken. For the engine-driven version, enable
+`experimental_creator_cameras` for that world (`./play.sh "<world>"` does it; the game clears
+the flag every time it saves, so it is per session) — **but that trades away that world's
+achievements, so do it on a throwaway world, not on one you care about.**
+
+**My achievements are disabled and I never turned cheats on.** Two things do that: the world
+has an experiment enabled, or the pack is missing the add-on flag. The manifest in this repo
+has it (`metadata.product_type = "addon"`) and the build enforces it; if you copied the pack
+out and edited its manifest, that is the line that went missing.
+
+To check a world, read its `level.dat`:
+
+```bash
+python3 build/nbt_experiments.py "<world>/level.dat"
+```
+
+The `experiments` compound is the verdict. `experiments_ever_used: 1` (or
+`saved_with_toggled_experiments: 1`) means the world has already been flagged and the game
+will not give achievements back on its own, even after `experimental_creator_cameras` is
+turned off. A world that never touched an experiment has those two at `0` and only behaves
+that way — that is the one to build in if you want achievements.
 
 **`Failed to load camera presets` in the content log.** A preset violated the schema.
 Check the exact field name in the log; `starting_radius` is the usual suspect.
