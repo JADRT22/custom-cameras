@@ -3,8 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Camera presets for **Minecraft Bedrock 26.50** — switched from an in-game menu or slash
-commands, **without cheats**. Needs the world's camera experiment turned on; see
-[Requirements](#requirements).
+commands, on any world, **with no cheats and no experiment**.
 
 The menu opens by **holding Shift while standing still** (2s), from `/cameramenu:open`, or
 by `/cameramenu:next` to cycle. All seven cameras are first-class: nothing here is
@@ -54,51 +53,50 @@ vanilla crosshair disappears, and that is expected.
 
 ## Requirements
 
-1. The pack enabled on the world, under **Behavior Packs**.
-2. **Experimental Creator Camera Features** on, under **World Settings → Experiments**.
+Nothing to turn on. Enabling the pack on the world under **Behavior Packs** is the whole
+setup: **no cheats, no experiment, and the world keeps its achievements.**
 
-The second one is not avoidable. The cameras are custom *camera presets*, and without that
-experiment the game never loads them — the add-on would have nothing to switch to. It also
-**disables that world's achievements permanently**, so this belongs on a world whose
-achievements you do not mind spending, or on a world you make for it.
+Both were checked rather than assumed, and the log is what settles them:
 
-**Cheats are not required.** Every command is registered with `cheatsRequired: false` and
-`permissionLevel: Any`, so `/cameramenu:*` works with `Allow Cheats: off`. Cheats and
-experiments are separate switches and only the experiment is needed here; turning cheats on as
-well would only cost the same world its achievements twice over.
+- **The experiment is not needed.** The custom presets load with the pack on a world that has
+  never had one. The way to tell is that a preset which fails to load makes the game throw
+  `Invalid camera preset` — and a session showing a working shoulder camera shows no such line.
+- **Cheats are not needed.** Every command is registered with `cheatsRequired: false` and
+  `permissionLevel: Any`, so `/cameramenu:*` works with `Allow Cheats: off`. Cheats and
+  experiments are separate switches and neither is required here.
 
 ### Achievements
 
-Three things can take a world's achievements, and exactly one of them is worth losing sleep
-over here:
+Only two things take a world's achievements, and this add-on avoids both:
 
 - **Cheats.** Not needed, as above.
-- **Any experiment.** Enabling one disables achievements for that world and it does not come
-  back. The camera presets need `experimental_creator_cameras`, so this is the price of the
-  add-on and there is no way around it — the one path that avoided it never rendered, below.
-- **A pack with no add-on flag.** Nothing to do with experiments, and invisible in game:
-  without `"metadata": { "product_type": "addon" }` in `manifest.json`, merely applying the
-  pack makes the game treat the world as a cheat world and switch achievements off. This repo
-  has it and the build refuses to package without it.
+- **Any experiment.** Not needed either — but `./play.sh` turns one on, which is why it now
+  refuses to run without `--yes`. Leave it alone and nothing is lost. If a world has *already*
+  had an experiment enabled, its `level.dat` has `experiments_ever_used: 1` and the game will
+  not hand the achievements back: that damage is per world and not undoable.
+
+One more thing can cost achievements and it is invisible in game: a pack with no add-on flag.
+Without `"metadata": { "product_type": "addon" }` in `manifest.json`, merely applying the pack
+makes the game treat the world as a cheat world and switch achievements off. This repo has it,
+and the build refuses to package without it.
 
 > Achievements also require **Survival mode**, so a world you play in creative has them
 disabled no matter what any pack does.
 
 ### The script camera (kept but hidden)
 
-There is a second way to move the camera in `scripts/main.js`: a `minecraft:free` camera
-repositioned by the script every tick. It is the only path that needs no experiment, so it was
-once the answer to all of the above — and in 26.50 it does not render:
+`scripts/main.js` also contains a second way to move the camera: a `minecraft:free` camera
+repositioned by the script every tick. It was written as a fallback for worlds where the
+presets were expected not to load, and it does not render in 26.50:
 
 - aiming it at the player collapses the view to first person, or to the ground;
 - passing the player's rotation instead renders **no camera at all** — no error in the log,
   just sky.
 
-So it is off, behind the `ENABLE_SCRIPT_PATH` flag in `scripts/main.js`: no menu entry, no
-`/cameramenu:mode|tune|debug`, and no silent fallback that would trade a working native camera
-for a broken one. Flip that flag to `true` to bring the whole path back if a future build
-starts honouring the free camera — the code is otherwise intact. A world without the
-experiment now says so in chat, instead of appearing to do something.
+So it is off, behind the `ENABLE_SCRIPT_PATH` flag: no menu entry, no
+`/cameramenu:mode|tune|debug`, and no silent fallback that would trade a working camera for a
+broken one. Flip the flag to `true` to bring the whole path back if a future build starts
+honouring the free camera — the code is otherwise intact.
 
 ## Installation
 
@@ -107,9 +105,8 @@ experiment now says so in chat, instead of appearing to do something.
 1. Grab `CameraMenu-v1.1.0.mcaddon` from the releases / `dist/`.
 2. Double-click it (or open it with Minecraft) to import.
 3. Enable it on the world under **Behavior Packs**.
-4. Turn on **Experimental Creator Camera Features** under the world's **Experiments**, and
-   leave cheats **off**. The experiment is what makes the presets load; cheats are not needed
-   and would only add a second reason for that world to lose its achievements.
+4. That is all. Leave cheats **off** and the world's experiments untouched — neither is
+   needed, and turning either on costs that world its achievements for nothing.
 
 ### Development install (what this repo does)
 
@@ -150,13 +147,13 @@ python3 build.py --icon     # (re)generate pack_icon.png
 The build refuses to package unless the manifest, UUIDs, modules, dependencies, every
 camera preset and both `.lang` files pass validation.
 
-### Keeping the experiment on
+### `play.sh` — you do not need it, and it costs achievements
 
-The game clears the experiment flag every time it saves a world, so in practice it is a
-per-session toggle. `play.sh` flips it in the worlds and then launches the game. That is the
-part that makes the add-on work, and the same part that costs those worlds their achievements,
-so it refuses to do anything without `--yes`. It also refuses to run while the game has a
-world loaded, since the game would overwrite `level.dat` on save and lose the flag:
+`play.sh` turns on `experimental_creator_cameras` in the worlds and then launches the game. It
+was written when the add-on was believed to need that experiment, and it does not: the presets
+load on a world that has never had one. All the script does now is disable those worlds'
+achievements permanently, so it refuses to run without `--yes`. It also refuses while the game
+has a world loaded, since the game would overwrite `level.dat` on save:
 
 ```bash
 ./play.sh                      # prints the warning and does nothing
@@ -235,8 +232,8 @@ They are enforced by the build validator so they cannot regress.
   disabling achievements the moment it is applied.
 - **No automatic fallback.** When a native preset fails to apply, the add-on does not quietly
   swap in the script camera: it puts the camera back to a defined state and says in chat that
-  the world has no experimental camera presets, which is the actual problem. A silent fallback
-  would only trade a working camera for a broken one.
+  the game rejected the preset, which is the actual problem. A silent fallback would only
+  trade a working camera for a broken one.
 - `scripts/main.js` uses `@minecraft/server 2.10.0` and `@minecraft/server-ui 2.2.0`. The
   menu uses literal strings instead of `RawMessage` because server-ui 2.x does not resolve
   nested messages. There is a safety latch that releases a player if a form never resolves.
@@ -280,10 +277,10 @@ They are enforced by the build validator so they cannot regress.
 
 ## Troubleshooting
 
-**Nothing happens on a world, and chat says it has no experimental camera presets.** The
-experiment is off for that world. Turn on **Experimental Creator Camera Features** in its
-settings, or use a world where it is already on — the add-on needs it, and there is no path
-that avoids it.
+**Chat says the game rejected a camera preset.** A preset failed to load, so the game answered
+`Invalid camera preset`. That is a schema problem in `cameras/presets/*.json`, not a world
+setting — the content log names the offending field (`starting_radius` is the classic), and
+`python3 build.py` catches it before it ships.
 
 **Will the camera be choppy?** No. The presets are driven by the engine, so they move like
 vanilla third person. The chop people noticed came from the hidden script path, which
@@ -310,8 +307,8 @@ that way — that is the one to build in if you want achievements.
 Check the exact field name in the log; `starting_radius` is the usual suspect.
 
 **Nothing happens at all, and there is no message either.** The pack has to be enabled under
-**Behavior Packs** for that world. If it is enabled and there is still nothing, the world's
-experiment is off — see the first entry in this section.
+**Behavior Packs** for that world. No experiment is involved, so that is the only thing to
+check.
 
 Always read the **newest** `ContentLog*.txt` rather than screenshots — old sessions mix
 into screenshots and it is easy to chase an error that was already fixed. A session with

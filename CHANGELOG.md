@@ -15,20 +15,27 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **The script camera path is hidden rather than deleted.** It is the only path that needs no
-  experiment, and in 26.50 it never rendered: aiming the free camera at the player collapses
-  the view to first person or to the ground, and passing the player's rotation renders no
-  camera at all. Everything that reached it now sits behind `ENABLE_SCRIPT_PATH` in
-  `scripts/main.js` — no menu entry, no `/cameramenu:mode|tune|debug`, and no silent fallback —
-  so a world without the experiment is told so in chat instead of appearing to work. Flipping
-  the flag brings the whole path back; the code is otherwise intact.
-- **The add-on now needs the experiment, and the README says so.** Native is the only path, so
-  the "no experiment, achievements preserved" framing is gone: it rested entirely on the path
-  that does not render. The README's requirements, installation step, `play.sh` section,
-  tuning section and troubleshooting were all rewritten to match.
+- **The script camera path is hidden rather than deleted.** It was written as a fallback for
+  worlds where the custom presets were expected not to load, and it does not render in 26.50:
+  aiming the free camera at the player collapses the view to first person or to the ground, and
+  passing the player's rotation renders no camera at all. Everything that reached it now sits
+  behind `ENABLE_SCRIPT_PATH` in `scripts/main.js` — no menu entry, no
+  `/cameramenu:mode|tune|debug`, and no silent fallback that would trade a working camera for a
+  broken one. Flipping the flag brings the whole path back; the code is otherwise intact.
+- **`play.sh` is documented as unnecessary.** It exists only to turn on
+  `experimental_creator_cameras`, which the add-on does not need, so all it does now is cost
+  those worlds their achievements. It still refuses to run without `--yes`.
 
 ### Fixed
 
+- **The add-on was briefly documented as needing the experiment. It does not.** The presets
+  load with the pack on a world that has never had one; the wrong claim came from treating the
+  game's documentation as the spec instead of the content log. The log is what settles it — a
+  preset that fails to load makes `setCamera` throw `Invalid camera preset`, and the sessions
+  showing a working shoulder camera contain no such line, on a world with
+  `experiments_ever_used: 0`. Requirements, achievements, installation and troubleshooting are
+  back to "no cheats, no experiment", and the chat message for a rejected preset no longer
+  blames a missing experiment.
 - **The script camera's aim was investigated, and the look-at target stays.** Passing
   `rotation: player.getRotation()` (the documented form,
   `camera @s set minecraft:free pos ^-0.75 ^ ^-1.5 rot ~ ~`) instead of `facingLocation` was
@@ -49,11 +56,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Achievements are preserved.** `manifest.json` now declares
   `"metadata": { "product_type": "addon" }`, the add-on flag that tells the game the pack is
-  an add-on and not a cheat world, and the build validator now fails without it. The two
-  paths and their cost are documented in the README: the **script** camera needs no
-  experiment and no cheats, so it keeps achievements; the **native** camera needs
-  `experimental_creator_cameras`, and enabling an experiment disables a world's achievements
-  for good.
+  an add-on and not a cheat world, and the build validator now fails without it. **This
+  release also described the native camera as needing `experimental_creator_cameras`. It does
+  not** — see Unreleased: the presets load without any experiment, and claiming otherwise sent
+  readers to a switch that only costs them a world's achievements.
 - **In-game framing adjustments.** The camera menu gained an **Adjust camera (script)** entry
   (`/cameramenu:tune` opens the same board): one button per step for height, side, distance
   and smoothing, saved per player and per world. Adjusting switches the player to the script

@@ -11,12 +11,13 @@ import { ActionFormData } from "@minecraft/server-ui";
 // ============================================================
 // Custom Cameras — native camera presets.
 //
-// The product is the native path: the engine drives a cameras/presets/*.json preset
-// (follow_orbit / fixed_boom). Those files only load on a world with the
-// experimental_creator_cameras experiment enabled, and enabling an experiment
-// disables that world's achievements for good — so this belongs on a world whose
-// achievements you do not mind losing. The manifest carries the add-on flag
-// (metadata.product_type) so the pack itself is never the thing that costs them.
+// The engine drives a cameras/presets/*.json preset (follow_orbit / fixed_boom). Those files
+// load with the pack: no cheats and no experiment are needed. Verified on 26.50 in a world
+// whose level.dat had never had an experiment (`experiments_ever_used: 0`) — and the proof is
+// that a preset that fails to load makes `setCamera` throw `Invalid camera preset`, which the
+// logging sessions did not show. The manifest still carries the add-on flag
+// (metadata.product_type = "addon"); without it, applying the pack alone costs the world its
+// achievements.
 //
 // The script-driven free camera is still in this file, but hidden behind
 // ENABLE_SCRIPT_PATH below. See that flag for why it is off.
@@ -37,16 +38,16 @@ const ENABLE_SPYGLASS_TRIGGER = false;
 
 // ---- The script camera: kept, but hidden ----
 //
-// The script path is the only one that needs no experiment, and therefore the only one that
-// leaves a world's achievements alone. It also never rendered in 26.50: aiming the free
-// camera at the player collapses the view to first person or to the ground, and passing the
-// player's rotation renders no camera at all. The native presets do render, so native is the
-// product and the script path is not offered.
+// A minecraft:free camera repositioned by the script every tick, written as a fallback for
+// worlds where the custom presets were believed not to load. Worlds like that turned out not
+// to exist — the presets load with the pack, no experiment involved — and the path does not
+// render in 26.50 anyway: aiming the free camera at the player collapses the view to first
+// person or to the ground, and passing the player's rotation renders no camera at all.
 //
 // Everything that reaches it is gated on this flag — no menu entry, no
-// `/cameramenu:mode|tune|debug`, and no silent fallback that would trade a working native
-// camera for a broken one — instead of deleting ~350 lines that a future build might honour.
-// Flip it to true to bring all of that back and re-test; the code below is otherwise intact.
+// `/cameramenu:mode|tune|debug`, and no silent fallback that would trade a working camera for
+// a broken one — instead of deleting ~350 lines that a future build might honour. Flip it to
+// true to bring all of that back and re-test; the code below is otherwise intact.
 const ENABLE_SCRIPT_PATH = false;
 
 // key, presetId (null = default/first person), persist
@@ -304,10 +305,13 @@ function applyPreset(player, preset, withFade = true) {
         // letting the player guess.
         try { player.camera.clear(); } catch { /* ignore */ }
         activeCam.delete(player.id);
+        // Do not blame the experiment here: the presets load with the pack on a world that has
+        // never had one. A rejection means the preset itself is wrong, and the content log has
+        // the schema error.
         player.sendMessage(
           wantsPortuguese(player)
-            ? "§c[Câmeras] este mundo não tem 'Experimental Creator Camera Features' ligado, então os presets não carregam. Ligue em Configurações do mundo → Experimentos (perde as conquistas deste mundo) ou use outro mundo."
-            : "§c[Cameras] this world does not have 'Experimental Creator Camera Features' enabled, so the presets never loaded. Turn it on in World Settings → Experiments (it costs this world its achievements) or use another world."
+            ? "§c[Câmeras] o jogo recusou este preset (\"Invalid camera preset\") — veja o erro de schema no content log."
+            : "§c[Cameras] the game rejected this camera preset (\"Invalid camera preset\") — check the content log for the schema error."
         );
       }
     }
